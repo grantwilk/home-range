@@ -12,12 +12,12 @@ Open **Add Filter** to browse these groups.
 
 | Group | Filter Types |
 | --- | --- |
-| Climate & Weather | Temperature, Relative Humidity, Hot Days, Wet Days, Daytime Cloud Cover |
+| Climate & Weather | Temperature, Relative Humidity, Hot Days, Annual Precipitation, Wet Days, Cloudy Days per Year |
 | Population & Nearby Places | County Population, Distance to Places |
-| Land & Terrain | Average County Elevation, Distance to Nature |
+| Land & Terrain | Land Cover, Landscape Region, Average County Elevation, Distance to Nature |
 | Natural Hazards | Natural Hazard Risk |
 
-- Choose **Temperature**, **Relative Humidity**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
+- Choose **Temperature**, **Relative Humidity**, **Annual Precipitation**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
 - Click the eye or layer name to color the map. Its switch applies or pauses the filter. Use **×** to remove the card.
 - Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot Days** also lets you set the daily high that counts as a hot day.
 - **County Population** uses smaller slider steps for rural counties and larger steps for major metros. Type whole numbers for precise limits.
@@ -35,6 +35,8 @@ To edit a link by hand, use the filter key followed by an inclusive `minimum..ma
 - `airports=0..30` selects locations within 30 straight-line miles of a qualifying commercial airport.
 - `cities=0..10&cities.population=150000..3000000` selects places within ten miles of a city in that population range.
 - `heatDays=0..30&heatDays.cutoff=95&mapCutoff=90` filters on days reaching 95°F and displays days reaching 90°F when the heat layer is viewed.
+- `rainfall=25..45&snowfall=0..50` selects counties averaging 25–45 inches of rain and up to 50 inches of new snow per year.
+- `cloudyDays=0..75` selects counties averaging at most 75 cloudy days per year. Old `cloud` percentage links open with the replacement filter paused so you can choose a range in days.
 - `filters=none` opens an empty filter panel. Shared links restore the cards included in the link.
 
 **Custom Places** travel with the link, including each saved name and its coordinates. The browser stores these after the `#` so the hosting server receives only the filter settings. Anyone you give the full link to can see the saved places.
@@ -50,20 +52,55 @@ Geography uses 2017 boundaries for 3,142 counties and equivalents across the 50 
 | January low, July high, local coldest-month low, local hottest-month high, monthly high/low profiles | 1991–2020 | 3,140 counties |
 | Mean relative humidity in the local coldest and hottest months | 1981–2010 | 3,140 counties |
 | Days with a daily high at or above a chosen temperature, wet-day frequency (drier to wetter) | 1991–2020 | 3,107 counties |
-| Midday satellite cloud frequency | 2000–2014 | 3,142 counties |
+| Annual rainfall | 1991–2020 | 3,142 counties |
+| Annual snowfall | 17 complete snow seasons from 2008–09 through 2025–26 | 2,966 counties in the contiguous U.S. |
+| Cloudy days per year | 1991–2020 | 3,142 counties |
+| Land cover, as a percentage of classified land | 2025 contiguous U.S., 2016 Alaska, 2001 Hawaii | 3,142 counties. Moss and lichen are distinguished in Alaska. |
+| Prairie Parkland and Great Plains ecological divisions | 2025 EcoMap | 3,061 counties in the contiguous U.S. |
+| Hot or cold desert climate | 1991–2020 | 3,119 counties |
 | Average county elevation | USGS GMTED2010 terrain grid | 3,142 counties |
 | Estimated county population | July 1, 2025 | 3,142 counties |
+| Reported violent crime rate | 2014 and 2016 | 2,951 counties |
+| Homicide death rate | 2017–2023 | 1,447 counties |
 | Overall natural hazard risk and 18 individual hazards | FEMA National Risk Index, December 2025 | 3,133 matched county boundaries. Coverage varies by hazard. |
 
-Temperature and precipitation use NOAA's published county-scale daily series for the contiguous U.S. and monthly series for Alaska and Hawaii. The importer requires complete records. Day counts use the daily county-area average. Wet days reach 0.01 inches of precipitation. Local coldest and hottest months use mean temperature to choose the month. Lexington city, Virginia, lacks a daily series in the source. The historical Valdez-Cordova Census Area has no matching Alaska monthly record. [EpiNOAA Documentation](https://arc.ncics.org/nclimgrid-overview/) · [NOAA Monthly County Files](https://www.ncei.noaa.gov/monitoring-content/data/us/climdiv/monthly/current/county-readme.txt)
+Temperature and wet-day frequency use NOAA's published county-scale daily series for the contiguous U.S. and monthly series for Alaska and Hawaii. The importer requires complete records. Day counts use the daily county-area average. Wet days reach 0.01 inches of precipitation. Local coldest and hottest months use mean temperature to choose the month. Lexington city, Virginia, lacks a daily series in the source. The historical Valdez-Cordova Census Area has no matching Alaska monthly record. [EpiNOAA Documentation](https://arc.ncics.org/nclimgrid-overview/) · [NOAA Monthly County Files](https://www.ncei.noaa.gov/monitoring-content/data/us/climdiv/monthly/current/county-readme.txt)
 
 Choose **Add Filter → Average County Elevation** to select a range in feet above sea level. The eye displays the terrain layer. Each value averages the USGS 30-arc-second mean-elevation grid over the mapped county footprint, including water surfaces within the boundary. Each cell contributes according to its area inside the county. A town, neighborhood or individual home can have a different elevation. [USGS GMTED2010](https://pubs.usgs.gov/of/2011/1073/)
 
 Population comes from U.S. Census Bureau Vintage 2025 resident estimates. The map draws 2017 county outlines. For counties with the same identifier, the estimate follows the 2025 county, including any minor boundary adjustments. The eight historical Connecticut counties use sums of their constituent towns. Alaska’s historical Valdez-Cordova Census Area uses the sum of Chugach and Copper River census areas. [Census County Estimates](https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html)
 
-County cloud frequency is an area-weighted derivative of Wilson & Jetz's Global 1-km Cloud Frequency v1. It measures cloud detections at daytime satellite overpasses. Polar winter and high-latitude biases affect Alaska. **The EarthEnv layer is licensed for noncommercial use with attribution.** The map legend and county details carry the attribution and license. A lower cloud frequency means clearer observed skies. [EarthEnv Data and Study](https://www.earthenv.org/cloud.html) · [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
+Under **Add Filter → Annual Precipitation**, choose **Annual Rainfall** or **Annual Snowfall**. Add the filter twice to set limits on both. Rainfall measures the depth of liquid precipitation. Home Range subtracts the water equivalent of frozen precipitation from ERA5 total precipitation, sums the monthly amounts, and averages 30 calendar years over each county. ERA5’s 0.25° grid can smooth local differences, particularly in mountains. [ERA5 Monthly Data](https://gdex.ucar.edu/datasets/d633001/) · [ECMWF Data Documentation](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation)
+
+Snowfall measures the depth of newly fallen snow accumulated during an October–September season. This includes snow that melts between storms. Home Range averages 17 complete seasons from NOAA’s National Gridded Snowfall Analysis. The September 2021 archive is incomplete, so 2020–21 is omitted everywhere. Alaska, Hawaii, and counties where valid cells cover less than 95% of the mapped area show **No data**. A measured zero can match a zero-inch range. [NOAA Snowfall Analysis](https://www.nohrsc.noaa.gov/snowfall/) · [NOAA Product Definition](https://www.nohrsc.noaa.gov/technology/pdf/PDD_National_Gridded_Snowfall_Analysis.pdf)
+
+**Cloudy Days per Year** counts a day when the county’s average cloud cover reaches 80%. The filter uses NOAA’s North American Regional Reanalysis, which combines weather observations with a model on a roughly 32 km grid. For each UTC day, Home Range averages the grid values across the county, counts qualifying days in each calendar year, then averages those annual counts over 1991–2020. Nighttime contributes to the daily mean. All 3,142 counties have at least 95% of their mapped area represented on every day of the period. A day below the threshold can still be partly cloudy. [NOAA North American Regional Reanalysis](https://www.ncei.noaa.gov/products/weather-climate-models/north-american-regional) · [Daily Cloud Data](https://psl.noaa.gov/thredds/dodsC/Datasets/NARR/Dailies/monolevel/tcdc.1991.nc.html)
 
 Choose **Add Filter → Relative Humidity**, then select **Coldest Month** or **Hottest Month**. Set the range in percent. County details show which calendar month supplies each value. The month comes from the same NOAA temperature profile as the coldest-month low and hottest-month high. Humidity comes from CHELSA v2.1’s modeled monthly near-surface relative humidity, averaged over each county from its native 30-arcsecond grid. The humidity baseline is 1981–2010 and the month-selection baseline is 1991–2020. [CHELSA Climatologies](https://www.chelsa-climate.org/datasets/chelsa_climatologies) · [Humidity Dataset Methods](https://doi.org/10.5194/essd-14-5573-2022)
+
+## County Landscapes
+
+Use **Add Filter → Land & Terrain → Land Cover** for what you might see from above. Choose a cover type, then set its minimum and maximum share of county land. Open a county’s **County Landscape** panel for the full mix. The two largest shares appear together even when neither covers a majority.
+
+| Preference | Example Settings With Match All |
+| --- | --- |
+| A mix of farms and woods | Add **Crops & Pasture** at **35–65%** and **Forest** at **35–65%**. |
+| A largely open prairie landscape | Combine **Grassland** at **50–100%** with **Landscape Region → Great Plains** at **50–100%**. **Prairie Parkland** covers a different ecological division with a mix of prairie and woodland. |
+| Farm country with little development | Use **Crops & Pasture** at **40–100%** and **Developed Land** at **0–10%**. Development includes roads, low-density housing, and some lawns. |
+| Avoid desert climates | Use **Landscape Region → Desert Climate** at **0–0%**. Raise the upper handle if a small desert portion is acceptable. |
+
+**Land Cover** uses the USGS National Land Cover Database’s satellite classifications at 30 m resolution. Each cell inside a county contributes to one cover class. Open water is excluded from the percentages, and wetlands count as land. The map uses 2025 imagery classifications for the contiguous U.S., 2016 for Alaska, and 2001 for Hawaii. Moss and lichen form a separate class in Alaska. County percentages describe the overall surroundings. Distances from a house to the nearest field or building require a finer-scale search. [USGS Annual NLCD](https://www.usgs.gov/centers/eros/science/annual-national-land-cover-database) · [MRLC Coverage and Vintages](https://www.mrlc.gov/faq)
+
+**Landscape Region** answers a different question. **Prairie Parkland** and **Great Plains** measure the share of mapped county area in those USDA Forest Service ecological divisions. The regional boundary persists where prairie has been converted to farms or towns. A grassland classification alone cannot establish native prairie. **Desert Climate** counts the areas that the 1991–2020 Köppen–Geiger map classifies as hot or cold desert (BWh or BWk). It can include shrub-covered or developed land. Home Range overlays both sources on the same county land mask used for Land Cover. Each measure requires its source to classify at least 95% of that mapped land. Counties spanning a boundary can have a partial share. The climate boundaries come from a roughly 1 km grid. Tiny mapped shares display as **<0.1%** or **>99.9%** to keep the exact endpoints useful. [USDA Forest Service EcoMap 2025](https://apps.fs.usda.gov/ArcX/rest/services/EDW/EDW_Ecomap2025_01/MapServer) · [Beck et al. Climate Classification](https://doi.org/10.1038/s41597-023-02549-6)
+
+## County Crime
+
+Choose **Add Filter → County Crime** and select a measure. The two handles set the inclusive range per 100,000 residents. Use the eye to see the county rates. You can add the filter a second time to use both measures together.
+
+- **Reported Violent Crime Rate** covers homicide, rape, robbery, and aggravated assault reported to police in **2014 and 2016**. The denominator is the population served by reporting agencies. County Health Rankings advises against comparing this measure across states because reporting practices differ. The underlying FBI county data can include estimates for incomplete agency reports. County Health Rankings retired this historical measure in 2023. [Measure Documentation](https://www.countyhealthrankings.org/sites/default/files/media/document/Trends%20documentation%202022.pdf) · [County Data Methods](https://www.icpsr.umich.edu/sites/nacjd/posts/shared/uniform-crime-reporting-program-resource-guide)
+- **Homicide Death Rate** counts annual deaths from assault among county residents during **2017–2023**, using death certificates. A death is assigned to the victim’s county of residence. The publisher suppresses rates for counties with fewer than ten deaths over the entire period. [County Health Rankings Homicide Methods](https://www.countyhealthrankings.org/health-data/community-conditions/social-and-economic-factors/safety-and-social-support/homicides)
+
+Both layers use the publisher’s rates, rounded to one decimal place. Missing values produce an unknown filter result. A published zero is eligible for a range that includes zero.
 
 ## Natural Hazards
 
@@ -131,6 +168,7 @@ Committed JSON files are sufficient for hosting. Rebuilding the scientific data 
 
 | Command | Output |
 | --- | --- |
+| `uv run scripts/crime.py` | County violent-crime and homicide death rates from County Health Rankings |
 | `uv run scripts/nature_landforms.py` | U.S. shoreline lines and named mountain-range polygons |
 | `uv run scripts/nature_parks.py` | Public parks, forests, and preserves |
 | `uv run scripts/nature_water.py` | Larger river centerlines and lake and reservoir polygons |
@@ -143,6 +181,10 @@ Committed JSON files are sufficient for hosting. Rebuilding the scientific data 
 | `uv run scripts/population.py` | July 2025 Census resident estimates matched to the county map and reconciled against published state totals |
 | `uv run scripts/build_climate.py --cache /tmp/home-range-epinoaa` | Temperature and day-count statistics from 360 monthly county files and the included Alaska/Hawaii monthly extract |
 | `uv run scripts/humidity.py --cache /tmp/home-range-humidity` | County mean relative humidity in the locally coldest and hottest months |
-| `uv run scripts/cloud.py --cache /tmp/home-range-cloud` | Area-weighted cloud frequency from checksum-verified satellite and county boundary files |
+| `uv run scripts/land_cover.py --cache /tmp/home-range-landcover` | County percentages from native USGS land cover grids |
+| `uv run scripts/ecoregions.py --cache /tmp/home-range-ecoregions --land-cover-cache /tmp/home-range-landcover` | County shares in two ecological divisions and a desert climate |
+| `uv run scripts/rainfall.py --cache /tmp/home-range-rainfall` | Average annual liquid precipitation from monthly ERA5 data |
+| `uv run scripts/snowfall.py --cache /tmp/home-range-snowfall` | Mean seasonal depth of new snow from NOAA’s gridded snowfall analysis |
+| `uv run scripts/cloud.py --cache /tmp/home-range-narr` | Average annual cloudy-day counts from daily NOAA cloud cover and county boundaries |
 
-Run `npm run lint`, `npm test`, `npm run build`, and `npm run browser`. Browser checks use installed Google Chrome and a temporary local web server. The Python data checks are `uv run --with duckdb==2.0.1 tests/climate_test.py`, `uv run tests/cloud_test.py`, `uv run tests/humidity_test.py`, `uv run tests/population_test.py`, `uv run tests/elevation_test.py`, `uv run tests/cities_test.py`, `uv run tests/schools_grocery_test.py`, `uv run tests/hospitals_airports_test.py`, `uv run tests/test_hazards.py`, `uv run tests/nature_landforms_test.py`, `uv run tests/nature_parks_test.py`, and `uv run tests/nature_water_test.py`. Python formatting and lint are checked with Ruff. [Design and Review Record](REVIEW.md)
+Run `npm run lint`, `npm test`, `npm run build`, and `npm run browser`. Browser checks use installed Google Chrome and a temporary local web server. The Python data checks are `uv run tests/land_cover_test.py`, `uv run tests/ecoregions_test.py`, `uv run --with duckdb==2.0.1 tests/climate_test.py`, `uv run tests/cloud_test.py`, `uv run tests/rainfall_test.py`, `uv run tests/snowfall_test.py`, `uv run tests/humidity_test.py`, `uv run tests/population_test.py`, `uv run tests/elevation_test.py`, `uv run tests/cities_test.py`, `uv run tests/schools_grocery_test.py`, `uv run tests/hospitals_airports_test.py`, `uv run tests/test_hazards.py`, `uv run tests/nature_landforms_test.py`, `uv run tests/nature_parks_test.py`, and `uv run tests/nature_water_test.py`. Python formatting and lint are checked with Ruff. [Design and Review Record](REVIEW.md)

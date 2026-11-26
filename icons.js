@@ -1,5 +1,9 @@
 // Shared line symbols for the atlas controls.
 const shapes = {
+  landCover:
+    '<path d="M3 19c3-5 7-7 12-7l6 1M3 16c2-2 4-3 6-4m-1 8c3-4 7-6 13-5m-7 5c2-2 4-3 7-3M7 11V8m-4 0 4-6 4 6Z"/>',
+  regions: '<path d="m2 6 7-3 6 3 7-3v15l-7 3-6-3-7 3Zm7-3v15m6-12v15"/>',
+  shield: '<path d="M12 3 4 6v5c0 4.5 3.4 8 8 10 4.6-2 8-5.5 8-10V6Z"/>',
   hazard:
     '<path d="M11 4a1.2 1.2 0 0 1 2 0l8 14a1.3 1.3 0 0 1-1.1 2H4.1A1.3 1.3 0 0 1 3 18Z"/><path d="M12 9v4m0 3v.2"/>',
   people:
@@ -17,6 +21,7 @@ const shapes = {
     '<path d="M10 14V5a2 2 0 1 1 4 0v9a4 4 0 1 1-4 0Z"/><path d="M12 9v8"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/>',
   rain: '<path d="M5 14a4 4 0 0 1-.2-8 6 6 0 0 1 11.5 1A3.5 3.5 0 0 1 18 14H5Zm1 3-1 3m6-3-1 3m6-3-1 3"/>',
+  snow: '<path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9 4l3 3 3-3m-6 16 3-3 3 3M4 10l4-1-1-4m10 14-1-4 4-1M4 14l4 1-1 4M17 5l-1 4 4 1"/>',
   cloud:
     '<path d="M6 18a5 5 0 1 1 .2-10 6 6 0 0 1 11.5.7A4.7 4.7 0 1 1 17 18Z"/>',
   chevron: '<path d="m7 10 5 5 5-5"/>',

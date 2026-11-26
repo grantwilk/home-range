@@ -88,8 +88,8 @@ test("new layers and default cards start at the full supported domain", () => {
   }
   assert.deepEqual(parseView(defaults()), defaults());
   assert.deepEqual(parseView(null), defaults());
-  assert.deepEqual(parseView({ county: [], layer: "cloud" }).county, []);
-  assert.equal(parseView({ county: [], layer: "cloud" }).layer, null);
+  assert.deepEqual(parseView({ county: [], layer: "cloudyDays" }).county, []);
+  assert.equal(parseView({ county: [], layer: "cloudyDays" }).layer, null);
 });
 test("representable old shared links preserve their results under all and any", () => {
   const samples = [
@@ -207,16 +207,16 @@ test("mapped coverage, heat cutoffs and independent overlap counts match publish
     );
   const g = read("geography"),
     cl = read("climate").counties,
-    cloud = read("cloud").counties;
+    cloudyDays = read("cloudyDays").counties;
   const pc = g.counties.map(({ id }) => ({
-    values: { ...cl[id], cloud: cloud[id] },
+    values: { ...cl[id], cloudyDays: cloudyDays[id] },
   }));
   assert.equal(new Set(g.counties.map((p) => p.id)).size, 3142);
   for (const [k, n] of [
     ["janLow", 3140],
     ["wetDays", 3107],
     ["heatDays", 3107],
-    ["cloud", 3142],
+    ["cloudyDays", 3142],
   ])
     assert.equal(pc.filter((p) => value(p, k) !== null).length, n);
   const criteria = [f("janLow", 40, 75), f("julHigh", 40, 80)];
@@ -231,7 +231,7 @@ test("mapped coverage, heat cutoffs and independent overlap counts match publish
   const phoenix = { values: cl["04013"] };
   assert.equal(value(phoenix, "heatDays", 90), 159);
   assert.ok(value(phoenix, "heatDays", 87) > 159);
-  assert.equal(cloud["04013"], 21.6);
-  assert.equal(cloud["15003"], 56.5);
-  assert.equal(cloud["11001"], 58.1);
+  assert.equal(cloudyDays["04013"], 16.7);
+  assert.equal(cloudyDays["15003"], 96.8);
+  assert.equal(cloudyDays["11001"], 54.3);
 });

@@ -98,7 +98,6 @@ h3 {
   font-weight: 630;
   white-space: nowrap;
 }
-.scale-label,
 .meta {
   color: var(--soft);
   font-size: 13px;
@@ -765,13 +764,12 @@ dialog::backdrop {
   min-width: 0;
   position: relative;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   background-color: #eaf0e8;
   background-image: radial-gradient(#68826a29 0.72px, transparent 0.85px);
   background-size: 8px 8px;
 }
 .map-toolbar {
-  grid-area: 1 / 1;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -781,18 +779,19 @@ dialog::backdrop {
 .map-scope {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
+  padding: 4px 9px 4px 5px;
+  border: 1px solid #c9d4c3;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 2px 6px #1930270d;
+  white-space: nowrap;
   font:
     650 20px Bricolage,
     "DM Sans",
     sans-serif;
   letter-spacing: -0.6px;
   color: var(--ink);
-}
-.map-divider {
-  width: 1px;
-  height: 18px;
-  background: #bfccbd;
 }
 .map-search,
 .secondary,
@@ -808,6 +807,9 @@ dialog::backdrop {
   gap: 6px;
   margin-left: auto;
 }
+.map-actions button {
+  pointer-events: auto;
+}
 .map-search {
   white-space: nowrap;
   gap: 7px;
@@ -816,15 +818,20 @@ dialog::backdrop {
   font-size: 13px;
 }
 #mapfield {
-  grid-area: 2 / 1 / 4 / 2;
+  grid-area: 1 / 1 / -1 / -1;
   background: transparent;
   border: 0;
   min-height: 0;
 }
 #map-controls {
-  grid-area: 2 / 1;
-  position: relative;
+  grid-area: 1 / 1;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   pointer-events: none;
+}
+#map-guide {
+  position: relative;
 }
 #map {
   position: absolute;
@@ -836,7 +843,7 @@ dialog::backdrop {
 }
 .map-footer {
   min-width: 0;
-  grid-area: 3 / 1;
+  grid-area: 2 / 1;
   position: relative;
   display: flex;
   justify-content: space-between;
@@ -1127,12 +1134,6 @@ h1 {
     height: 36px;
   }
 }
-@container map-panel (max-width: 780px) {
-  .map-toolbar .scale-label,
-  .map-toolbar .map-divider {
-    display: none;
-  }
-}
 @container map-panel (max-width: 590px) {
   .map-toolbar {
     padding-inline: 10px;
@@ -1154,6 +1155,9 @@ h1 {
   }
 }
 @container map-panel (max-width: 360px) {
+  .map-scope {
+    padding: 4px;
+  }
   .map-scope span {
     display: none;
   }
@@ -1175,8 +1179,6 @@ h1 {
   .railtitle {
     padding: 5px 10px;
   }
-  .map-toolbar .scale-label,
-  .map-divider,
   kbd {
     display: none;
   }
@@ -1338,6 +1340,9 @@ h1 {
   gap: 18px;
   margin-top: 18px;
 }
+.catalog-column {
+  display: contents;
+}
 #catalog-options .catalog-heading {
   font-size: 16px;
   line-height: 1.25;
@@ -1358,19 +1363,24 @@ h1 {
 }
 @media (min-width: 700px) {
   dialog:has(#catalog-options) {
-    width: 740px;
+    width: 840px;
+    max-height: calc(100dvh - 40px);
     max-width: calc(100vw - 40px);
   }
-  #catalog-options:has(section + section) {
-    display: block;
-    columns: 2;
+  #catalog-options:has(.catalog-column + .catalog-column) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 28px;
   }
-  #catalog-options section {
-    break-inside: avoid;
+  .catalog-column {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
   }
-  #catalog-options section + section {
-    margin-top: 18px;
+  .catalog-column section {
+    flex: auto;
+    display: grid;
+    grid-template-rows: max-content;
+    grid-auto-rows: 1fr;
   }
 }
 .edit-places,
@@ -1458,4 +1468,48 @@ h1 {
 .hazard-reading {
   font-size: clamp(1.35rem, 4vw, 2rem);
   letter-spacing: -0.025em;
+}
+
+.landscape-detail summary small {
+  display: block;
+  margin: 3px 0 0 1.1em;
+  font-weight: 400;
+  color: var(--soft);
+}
+.landscape-detail h3 {
+  margin-bottom: 0;
+}
+.landscape-detail .micro {
+  margin-top: 4px;
+}
+.land-shares {
+  list-style: none;
+  margin: 10px 0 16px;
+  padding: 0;
+}
+.land-shares li {
+  display: grid;
+  grid-template-columns: minmax(7.8rem, 1fr) minmax(2.5rem, 1.25fr) 3.5rem;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 0.85rem;
+}
+.land-shares b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.land-track,
+.land-track i {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+}
+.land-track {
+  background: #edf0e9;
+}
+
+.land-shares small {
+  display: block;
+  color: var(--soft);
 }

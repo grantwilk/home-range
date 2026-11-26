@@ -21,37 +21,6 @@
   <body>
     <main class="workspace">
       <section class="mapcard" aria-label="Interactive United States map">
-        <div class="map-toolbar">
-          <span class="map-scope" title="Home Range"
-            ><img src="./assets/mark.svg" width="27" height="27" alt="" /><span
-              >Home Range</span
-            ></span
-          >
-          <span class="map-divider"></span
-          ><span id="grain" class="scale-label">U.S. County Map</span>
-          <div class="map-actions">
-            <button class="map-search" id="search">
-              <i data-icon="search"></i>Find a Place <kbd>/</kbd>
-            </button>
-            <button
-              id="share"
-              class="secondary"
-              aria-label="Share View"
-              title="Share View"
-            >
-              <i data-icon="share"></i><span>Share View</span>
-            </button>
-            <button
-              id="export-pdf"
-              class="secondary"
-              aria-label="Export PDF"
-              title="Export this map with town labels and a key"
-              disabled
-            >
-              <i data-icon="download"></i><span>Export PDF</span>
-            </button>
-          </div>
-        </div>
         <div id="mapfield">
           <svg
             id="map"
@@ -105,16 +74,50 @@
               </g>
             </svg>
           </svg>
-          <div id="access-status" role="status" hidden></div>
           <div id="hover" hidden></div>
           <div id="loading" role="status">Loading Home Range…</div>
         </div>
         <div id="map-controls">
-          <div class="compass" aria-hidden="true">
-            N<svg width="16" height="27" viewBox="0 0 16 27">
-              <path d="M8 1 15 23l-7-5z" fill="#768278" />
-              <path d="M8 1 1 23l7-5z" fill="#34493d" />
-            </svg>
+          <div class="map-toolbar">
+            <span class="map-scope" title="Home Range"
+              ><img
+                src="./assets/mark.svg"
+                width="27"
+                height="27"
+                alt=""
+              /><span>Home Range</span></span
+            >
+            <div class="map-actions">
+              <button class="map-search" id="search">
+                <i data-icon="search"></i>Find a Place <kbd>/</kbd>
+              </button>
+              <button
+                id="share"
+                class="secondary"
+                aria-label="Share View"
+                title="Share View"
+              >
+                <i data-icon="share"></i><span>Share View</span>
+              </button>
+              <button
+                id="export-pdf"
+                class="secondary"
+                aria-label="Export PDF"
+                title="Export this map with town labels and a key"
+                disabled
+              >
+                <i data-icon="download"></i><span>Export PDF</span>
+              </button>
+            </div>
+          </div>
+          <div id="map-guide">
+            <div id="access-status" role="status" hidden></div>
+            <div class="compass" aria-hidden="true">
+              N<svg width="16" height="27" viewBox="0 0 16 27">
+                <path d="M8 1 15 23l-7-5z" fill="#768278" />
+                <path d="M8 1 1 23l7-5z" fill="#34493d" />
+              </svg>
+            </div>
           </div>
         </div>
         <div class="map-footer">

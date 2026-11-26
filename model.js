@@ -1,3 +1,4 @@
+import { landscapeLayers, landShareLabel } from "./landscape.js";
 import { hazardLayers } from "./hazards.js";
 import {
   facilityLayers,
@@ -31,6 +32,14 @@ const sky = [
   "#749cab",
   "#63849b",
   "#4f6586",
+];
+const crimeColors = [
+  "#f5e9d9",
+  "#ecd2b7",
+  "#dbb08f",
+  "#c38972",
+  "#9f6264",
+  "#744454",
 ];
 const climate = "1991–2020";
 // Keep rural and urban limits easy to reach with round steps in each decade.
@@ -126,6 +135,34 @@ export const layers = {
     thermal,
     [0, 366],
   ),
+  rainfall: layer(
+    "Annual Rainfall",
+    "in/yr",
+    "rain",
+    climate,
+    "Average inches of liquid precipitation per year across the county. ERA5 estimates rain separately from frozen precipitation.",
+    [10, 20, 30, 40, 50, 70],
+    moisture,
+    [0, 100],
+  ),
+  snowfall: layer(
+    "Annual Snowfall",
+    "in/yr",
+    "snow",
+    "2008–09 through 2025–26, excluding 2020–21",
+    "Average inches of new snow over an October–September season. NOAA covers the contiguous U.S. Counties with incomplete coverage are marked on the map.",
+    [1, 5, 15, 30, 60, 100],
+    [
+      "#f2f4f4",
+      "#d7e5e8",
+      "#b9d4df",
+      "#93bad0",
+      "#6e9bbc",
+      "#4b79a4",
+      "#375781",
+    ],
+    [0, 300],
+  ),
   wetDays: layer(
     "Wet Days",
     "days/yr",
@@ -136,15 +173,15 @@ export const layers = {
     moisture,
     [0, 366],
   ),
-  cloud: layer(
-    "Daytime Cloud Cover",
-    "%",
+  cloudyDays: layer(
+    "Cloudy Days per Year",
+    "days/yr",
     "cloud",
-    "2000–2014",
-    "Percentage of daytime satellite observations that detected clouds, averaged across the county.",
-    [30, 40, 50, 55, 60, 65],
+    climate,
+    "A day counts when modeled cloud cover averages at least 80% across the county over 24 hours, including nighttime. The range uses the 1991–2020 annual average.",
+    [20, 40, 60, 80, 100, 120],
     sky,
-    [0, 100],
+    [0, 366],
   ),
   elevation: {
     ...layer(
@@ -182,6 +219,27 @@ export const layers = {
     sliderStops: populationStops,
     sliderTicks: [0, 1_000, 10_000, 100_000, 1_000_000, 10_000_000],
   },
+  violentCrimeRate: layer(
+    "Reported Violent Crime Rate",
+    "per 100k",
+    "shield",
+    "2014 and 2016",
+    "Homicide, rape, robbery, and aggravated assault reported to police per 100,000 residents served. Annual average for 2014 and 2016. Compare counties within the same state because reporting practices differ.",
+    [100, 200, 300, 500, 800],
+    crimeColors,
+    [0, 2000],
+  ),
+  homicideRate: layer(
+    "Homicide Death Rate",
+    "per 100k",
+    "shield",
+    "2017–2023",
+    "Annual homicide deaths per 100,000 residents, averaged over 2017–2023. Deaths count in the victim’s home county. Counties with fewer than 10 deaths over the period have no published rate.",
+    [2, 5, 10, 15, 25],
+    crimeColors,
+    [0, 65],
+  ),
+  ...landscapeLayers,
   ...hazardLayers,
   ...facilityLayers,
 };
@@ -189,7 +247,6 @@ export const poles = {
   coldHumidity: ["Less humid", "More humid"],
   hotHumidity: ["Less humid", "More humid"],
   wetDays: ["Drier", "Wetter"],
-  cloud: ["Clearer", "Cloudier"],
 };
 export function value(place, key, cutoff = 90) {
   const x =
@@ -351,18 +408,51 @@ function mergeRanges(ranges, mode, warnings) {
   return { ...first, min: sorted[0].min, max };
 }
 
+// A link may include every current measure and the retired cloud layer.
+const linkedFilterLimit = Math.max(48, Object.keys(layers).length + 1);
+const oldCloud = "cloud";
+const dayCloud = "cloudyDays";
+function linkedLayer(raw) {
+  return typeof raw.layer === "string" &&
+    (raw.layer === oldCloud || Object.hasOwn(layers, raw.layer))
+    ? raw.layer
+    : raw.views?.county;
+}
+
+export function usesLegacyCloud(raw) {
+  return Boolean(
+    raw &&
+    (linkedLayer(raw) === oldCloud ||
+      (Array.isArray(raw.county) &&
+        raw.county
+          .slice(0, linkedFilterLimit)
+          .some((f) => f?.key === oldCloud))),
+  );
+}
+
 export function parseView(raw, warn = () => {}) {
   const state = defaults();
   if (!raw || typeof raw !== "object") return state;
   const warnings = new Set();
   state.mode = (raw.mode ?? raw.modes?.county) === "any" ? "any" : "all";
   if (validCutoff(raw.cutoff)) state.cutoff = raw.cutoff;
+  const migrateCloud = usesLegacyCloud(raw);
+  const linked = Array.isArray(raw.county)
+    ? raw.county.slice(0, linkedFilterLimit)
+    : [];
+  const savedDays = linked.some((f) => f?.key === dayCloud);
   if (Array.isArray(raw.county)) {
     const grouped = new Map();
-    // Previous releases accepted at most 48 criteria in a shared link.
-    if (raw.county.length > 48)
-      warnings.add("Only the first 48 linked filters were restored.");
-    for (const input of raw.county.slice(0, 48)) {
+    if (raw.county.length > linkedFilterLimit)
+      warnings.add(
+        `Only the first ${linkedFilterLimit} linked filters were restored.`,
+      );
+    for (const input of linked) {
+      if (migrateCloud && input?.key === oldCloud) {
+        if (!savedDays && !grouped.has(dayCloud))
+          grouped.set(dayCloud, [freshFilter(dayCloud)]);
+        continue;
+      }
       if (
         !input ||
         typeof input.key !== "string" ||
@@ -378,10 +468,21 @@ export function parseView(raw, warn = () => {}) {
       mergeRanges(ranges, state.mode, warnings),
     );
   }
-  const desired =
-    typeof raw.layer === "string" && Object.hasOwn(layers, raw.layer)
-      ? raw.layer
-      : raw.views?.county;
+  let desired = linkedLayer(raw);
+  if (migrateCloud) {
+    if (desired === oldCloud) {
+      desired = dayCloud;
+      if (state.county.length && !state.county.some((f) => f.key === dayCloud))
+        state.county.push(freshFilter(dayCloud));
+    }
+    if (state.county.some((f) => f.key === dayCloud)) {
+      warnings.add(
+        savedDays
+          ? "This link referenced the former cloud-frequency percentage. Its saved Cloudy Days range and switch setting have been kept."
+          : "This link used daytime cloud frequency (%). Cloudy Days measures days per year. Its filter is paused at the full range so you can choose new limits.",
+      );
+    }
+  }
   state.layer = state.county.some((f) => f.key === desired)
     ? desired
     : (state.county[0]?.key ?? null);
@@ -400,6 +501,7 @@ export const metricName = (key, cutoff) =>
 export function countyReading(place, key, cutoff) {
   if (!place) return "No county data";
   const score = value(place, key, cutoff);
+  if (layers[key].landscape) return landShareLabel(score);
   if (!layers[key].hazard) return fmt(score, layers[key].unit);
   const rating = place.hazardRatings?.[key];
   if (!rating) return "No matching county boundary";

@@ -12,6 +12,12 @@ import {
 } from "./filter-catalog.js";
 import { readViewUrl, writeViewUrl } from "./view-url.js";
 import { editPlaces } from "./custom-places.js";
+import {
+  coverKeys,
+  regionKeys,
+  landscapeValues,
+  landShareLabel,
+} from "./landscape.js";
 import { countyHazards, hazardLayers } from "./hazards.js";
 import { icon } from "./icons.js";
 import {
@@ -24,6 +30,7 @@ import {
   color,
   defaults,
   parseView,
+  usesLegacyCloud,
   fmt,
   sliderPosition,
   metricName,
@@ -121,6 +128,7 @@ function restoreAddress() {
   viewTransform();
   refresh();
   restoringView = false;
+  if (usesLegacyCloud(raw)) syncAddress();
   if (
     (Array.isArray(raw?.station) && raw.station.some((f) => f?.on)) ||
     ["clear", "partlyCloudy", "cloudy", "dryDays"].includes(raw?.layer) ||
@@ -495,8 +503,8 @@ function openPlaces(f) {
     },
   });
 }
-const cloudCredit =
-  '<a href="https://www.earthenv.org/cloud.html">Wilson &amp; Jetz · EarthEnv</a> · county area means · <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>';
+const cloudyDaysCredit =
+  '<a href="https://psl.noaa.gov/data/gridded/data.narr.html">NOAA PSL · North American Regional Reanalysis</a>';
 const humidityCredit =
   '<a href="https://www.chelsa-climate.org/datasets/chelsa_climatologies">CHELSA v2.1 humidity</a>';
 const temperatureCredit =
@@ -507,6 +515,33 @@ const elevationCredit =
   '<a href="https://pubs.usgs.gov/of/2011/1073/">USGS &amp; NGA · GMTED2010 terrain</a>';
 const populationCredit =
   '<a href="https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html">U.S. Census Bureau · Vintage 2025</a>';
+const countySources = {};
+function registerCountySource(key, source) {
+  const link = `<a href="${esc(source.source)}">${esc(source.credit)}</a>`;
+  countySources[key] = {
+    period: source.period,
+    defaultPeriod: source.defaultPeriod,
+    periodByState: source.periodByState,
+    credit: source.licenseUrl
+      ? `${link} · <a href="${esc(source.licenseUrl)}">${esc(source.license)}</a>`
+      : link,
+  };
+}
+function periodFor(key, county) {
+  const source = countySources[key];
+  if (!source) return layers[key].period;
+  return county
+    ? (source.periodByState?.[county.id.slice(0, 2)] ??
+        source.defaultPeriod ??
+        source.period)
+    : source.period;
+}
+const crimeCredits = {
+  violentCrimeRate:
+    '<a href="https://www.countyhealthrankings.org/sites/default/files/media/document/Trends%20documentation%202022.pdf">County Health Rankings · FBI (2014 and 2016)</a>',
+  homicideRate:
+    '<a href="https://www.countyhealthrankings.org/health-data/community-conditions/social-and-economic-factors/safety-and-social-support/homicides">County Health Rankings · NCHS (2017–2023)</a>',
+};
 const seasonalMonths = {
   coldLow: "coldMonth",
   coldHumidity: "coldMonth",
@@ -514,6 +549,24 @@ const seasonalMonths = {
   hotHumidity: "hotMonth",
 };
 const isHumidity = (key) => key === "coldHumidity" || key === "hotHumidity";
+// Keep groups intact and preserve their reading order across layout changes.
+function catalogColumns(groups) {
+  if (groups.length < 2) return [groups];
+  // A heading takes roughly half the space of a two-line option.
+  const weights = groups.map((group) => group.entries.length + 0.5);
+  const half = weights.reduce((sum, weight) => sum + weight, 0) / 2;
+  let split = 1;
+  let left = weights[0];
+  while (
+    split < groups.length - 1 &&
+    Math.abs(left + weights[split] - half) < Math.abs(left - half)
+  ) {
+    left += weights[split];
+    split++;
+  }
+  return [groups.slice(0, split), groups.slice(split)];
+}
+
 function addFilter() {
   const used = new Set(filters().map((f) => f.key));
   showDialog(
@@ -524,19 +577,27 @@ function addFilter() {
     options = $("catalog-options");
   function showMatches() {
     const groups = catalogMatches(used, search.value);
-    options.innerHTML =
-      groups
-        .map((group) => {
-          const buttons = group.entries
-            .map(({ entry, key, detail }) => {
-              const symbol = layers[entry.keys[0]].icon;
-              return `<button class="catalog-option" data-pick="${entry.id}" data-measure="${key}"><span class="tile-icon ${symbol}">${icon(symbol, 18)}</span><span><strong>${esc(entry.name)}</strong><small>${esc(detail)}</small></span>${icon("plus", 16)}</button>`;
-            })
-            .join("");
-          return `<section data-group="${esc(group.name)}"><h3 class="catalog-heading">${esc(group.name)}</h3>${buttons}</section>`;
-        })
-        .join("") ||
-      '<p id="catalog-empty" role="status">No available filters match your search.</p>';
+    if (!groups.length) {
+      options.innerHTML =
+        '<p id="catalog-empty" role="status">No available filters match your search.</p>';
+      return;
+    }
+    options.innerHTML = catalogColumns(groups)
+      .map((column) => {
+        const sections = column
+          .map((group) => {
+            const buttons = group.entries
+              .map(({ entry, key, detail }) => {
+                const symbol = layers[entry.keys[0]].icon;
+                return `<button class="catalog-option" data-pick="${entry.id}" data-measure="${key}"><span class="tile-icon ${symbol}">${icon(symbol, 18)}</span><span><strong>${esc(entry.name)}</strong><small>${esc(detail)}</small></span>${icon("plus", 16)}</button>`;
+              })
+              .join("");
+            return `<section data-group="${esc(group.name)}"><h3 class="catalog-heading">${esc(group.name)}</h3>${buttons}</section>`;
+          })
+          .join("");
+        return `<div class="catalog-column">${sections}</div>`;
+      })
+      .join("");
   }
   showMatches();
   if (matchMedia("(pointer: fine)").matches) search.focus();
@@ -576,14 +637,27 @@ function paintLegend() {
   }
   $("legend-name").textContent = metricName(state.layer, state.cutoff);
   $("legend-icon").innerHTML = icon(m.icon);
+  const statistic =
+    {
+      population: "Resident estimate",
+      cloudyDays: "24-hour cloud cover ≥80%",
+      desertClimate: "Share of climate-classified land",
+      rainfall: "Mean annual rainfall",
+      snowfall: "Mean seasonal snowfall",
+    }[state.layer] ??
+    (m.landscape === "landCover"
+      ? "Share of county land"
+      : m.landscape === "ecoregion"
+        ? "Share of mapped ecological area"
+        : poles[state.layer]?.join(" → "));
   $("legend-sub").textContent =
     (m.hazard
       ? "National risk percentile"
-      : state.layer === "population"
-        ? "Resident estimate"
-        : (poles[state.layer]?.join(" → ") ?? "County average")) +
+      : crimeCredits[state.layer]
+        ? "Annual rate"
+        : (statistic ?? "County average")) +
     " · " +
-    m.period;
+    periodFor(state.layer);
   if (m.facility) {
     const count = access?.shown === state.layer ? access.count : undefined;
     const countLabel =
@@ -624,9 +698,11 @@ function paintLegend() {
   for (const key of keys) {
     if (layers[key].facility) continue;
     if (layers[key].hazard) credits.add(hazardCredit);
-    else if (key === "cloud") credits.add(cloudCredit);
+    else if (key === "cloudyDays") credits.add(cloudyDaysCredit);
+    else if (countySources[key]) credits.add(countySources[key].credit);
     else if (key === "population") credits.add(populationCredit);
     else if (key === "elevation") credits.add(elevationCredit);
+    else if (crimeCredits[key]) credits.add(crimeCredits[key]);
     else {
       if (isHumidity(key)) credits.add(humidityCredit);
       credits.add(temperatureCredit);
@@ -711,7 +787,6 @@ function refresh(continuous = false) {
   }
   access?.update(local, state.layer, state.mode, votes);
   referenceMap?.update(local);
-  $("grain").textContent = hasAccess ? "U.S. Proximity Map" : "U.S. County Map";
 
   paintLegend();
 }
@@ -949,6 +1024,42 @@ function monthlyChart(values) {
     "</tbody></table></details>"
   );
 }
+function landscapeDetails(county, viewing) {
+  const cover = coverKeys
+    .filter((key) => Number.isFinite(county.values[key]))
+    .sort((a, b) => county.values[b] - county.values[a]);
+  const leading = cover
+    .filter((key) => county.values[key] > 0)
+    .slice(0, 2)
+    .map((key) => layers[key].name + " " + landShareLabel(county.values[key]))
+    .join(" · ");
+  const shareRow = (key) => {
+    const percent = county.values[key];
+    const period =
+      layers[key].landscape === "ecoregion"
+        ? `<small>${esc(periodFor(key, county))}</small>`
+        : "";
+    return `<li><span>${esc(layers[key].name)}${period}</span><span class="land-track" aria-hidden="true"><i style="width:${Number.isFinite(percent) ? percent : 0}%;background:${layers[key].swatch}"></i></span><b>${esc(landShareLabel(percent))}</b></li>`;
+  };
+  const regions = regionKeys.filter((key) =>
+    Number.isFinite(county.values[key]),
+  );
+  return `<details class="month-table landscape-detail" ${viewing ? "open" : ""}>
+    <summary>County Landscape${leading ? `<small>${esc(leading)}</small>` : ""}</summary>
+    <h3>Land Cover</h3>${
+      cover.length
+        ? `<p class="micro">${esc(periodFor(cover[0], county))} · Share of classified land, excluding open water. A particular address can have a different mix.</p>
+    <ul class="land-shares">${cover.map(shareRow).join("")}</ul>`
+        : "<p>No land cover data for this county.</p>"
+    }
+    <h3>Landscape Region</h3>${
+      regions.length
+        ? `<p class="micro">Prairie Parkland and Great Plains are ecological regions. Desert Climate can overlap either.</p>
+    <ul class="land-shares">${regionKeys.map(shareRow).join("")}</ul>`
+        : "<p>No landscape region data for this county.</p>"
+    }
+    </details>`;
+}
 function placeDetails(uid) {
   const p = byID.get(uid);
   if (!p) return;
@@ -962,7 +1073,7 @@ function placeDetails(uid) {
       );
   const monthName = (key) => months[v[seasonalMonths[key]] - 1] ?? "";
   const fields = Object.keys(layers).filter(
-    (k) => !layers[k].facility && !layers[k].hazard,
+    (k) => !layers[k].facility && !layers[k].hazard && !layers[k].landscape,
   );
   const active = filters().filter((f) => f.on && !layers[f.key].facility);
   showDialog(
@@ -974,11 +1085,13 @@ function placeDetails(uid) {
       p.id +
       "</p>" +
       (m && !m.facility
-        ? `<div class="detailval${m.hazard ? " hazard-reading" : ""}">${countyReading(p, state.layer, state.cutoff)}</div><p>${[esc(metricName(state.layer, state.cutoff)), monthName(state.layer), m.period].filter(Boolean).join(" · ")}</p>`
+        ? `<div class="detailval${m.hazard ? " hazard-reading" : ""}">${countyReading(p, state.layer, state.cutoff)}</div><p>${[esc(metricName(state.layer, state.cutoff)), monthName(state.layer), periodFor(state.layer, p)].filter(Boolean).join(" · ")}</p>`
         : "") +
       '<div class="actions"><button class="secondary" id="locate-detail">' +
       icon("location", 16) +
-      'Locate on Map</button></div><h3>County Profile</h3><div class="detailgrid">' +
+      "Locate on Map</button></div>" +
+      landscapeDetails(p, m?.landscape) +
+      '<h3>County Profile</h3><div class="detailgrid">' +
       fields
         .map(
           (k) =>
@@ -987,7 +1100,9 @@ function placeDetails(uid) {
             "<b>" +
             fmt(value(p, k, state.cutoff), layers[k].unit) +
             "</b>" +
-            (k === "population" ? layers.population.period : monthName(k)) +
+            (k === "population" || crimeCredits[k] || countySources[k]
+              ? layers[k].period
+              : monthName(k)) +
             (k === "population" && p.populationNote
               ? "<br>" + esc(p.populationNote)
               : "") +
@@ -1023,16 +1138,11 @@ function placeDetails(uid) {
             })
             .join("")
         : "") +
-      '<p class="micro">' +
-      "Temperatures and day counts use 1991–2020 NOAA records. Each county’s mean temperatures identify its coldest and hottest months. " +
-      humidityCredit +
-      " gives the 1981–2010 mean relative humidity in those months. Cloud frequency uses 2000–2014. " +
-      cloudCredit +
-      ". Resident population estimates come from the " +
-      populationCredit +
-      ". Average county elevation comes from " +
-      elevationCredit +
-      "</p>",
+      '<p class="micro">Crime measures use ' +
+      crimeCredits.violentCrimeRate +
+      " and " +
+      crimeCredits.homicideRate +
+      ".</p>",
   );
 
   $("locate-detail").onclick = () => {
@@ -1383,22 +1493,44 @@ function bind() {
 }
 
 async function init() {
-  const [g, climate, cloud, humidity, population, elevation, hazards] =
-    await Promise.all(
-      [
-        "geography",
-        "climate",
-        "cloud",
-        "humidity",
-        "population",
-        "elevation",
-        "hazards",
-      ].map(async (name) => {
-        const r = await fetch("./data/" + name + ".json");
-        if (!r.ok) throw new Error(name + " HTTP " + r.status);
-        return r.json();
-      }),
-    );
+  const [
+    g,
+    climate,
+    cloudyDays,
+    rainfall,
+    snowfall,
+    humidity,
+    population,
+    elevation,
+    hazards,
+    crime,
+    landCover,
+    ecoregion,
+  ] = await Promise.all(
+    [
+      "geography",
+      "climate",
+      "cloudyDays",
+      "rainfall",
+      "snowfall",
+      "humidity",
+      "population",
+      "elevation",
+      "hazards",
+      "crime",
+      "land-cover",
+      "ecoregions",
+    ].map(async (name) => {
+      const r = await fetch("./data/" + name + ".json");
+      if (!r.ok) throw new Error(name + " HTTP " + r.status);
+      return r.json();
+    }),
+  );
+  for (const key of landCover.keys) registerCountySource(key, landCover);
+  for (const key of ecoregion.keys)
+    registerCountySource(key, ecoregion.measures[key]);
+  registerCountySource("rainfall", rainfall);
+  registerCountySource("snowfall", snowfall);
   const states = new Map(g.states.map((s) => [s.id, s]));
   const base = $("basemap");
   svgNode(
@@ -1449,10 +1581,16 @@ async function init() {
       el,
       values: {
         ...risk.values,
+        ...landscapeValues(landCover, c.id),
+        ...landscapeValues(ecoregion, c.id),
         ...climate.counties[c.id],
         ...humidity.counties[c.id],
-        cloud: cloud.counties[c.id],
+        cloudyDays: cloudyDays.counties[c.id],
+        rainfall: rainfall.counties[c.id],
+        snowfall: snowfall.counties[c.id],
         population: population.counties[c.id],
+        violentCrimeRate: crime.counties[c.id],
+        homicideRate: crime.homicide[c.id],
         elevation: elevation.counties[c.id],
       },
     });
@@ -1487,14 +1625,19 @@ async function init() {
   }
   byID = new Map(places.map((p) => [p.uid, p]));
 
-  // Fit the national view above the legend; zoomed geography can use the full canvas.
-  const controls = $("map-controls");
-  mapFit.setAttribute("height", controls.getBoundingClientRect().height);
-  new ResizeObserver(([entry]) => {
-    mapFit.setAttribute("height", entry.contentRect.height);
+  // Keep the reset view between the controls while zoomed geography can fill the canvas.
+  const guide = $("map-guide");
+  function fitMapFrame() {
+    const rect = guide.getBoundingClientRect();
+    mapFit.setAttribute("y", rect.top - svg.getBoundingClientRect().top);
+    mapFit.setAttribute("height", rect.height);
     styleMapScale();
     access?.redraw();
-  }).observe(controls);
+  }
+  fitMapFrame();
+  const resizeMap = new ResizeObserver(fitMapFrame);
+  resizeMap.observe(guide);
+  resizeMap.observe(document.querySelector(".map-toolbar"));
 
   access = new FacilityMap(places, paintLegend);
   referenceMap = new ReferenceMap();

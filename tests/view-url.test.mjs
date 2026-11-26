@@ -131,3 +131,81 @@ test("minute-based links pause only affected filters and retain city populations
     assert.deepEqual(read(next), state);
   }
 });
+
+test("retired cloud percentages migrate to one paused days card without changing other filters", () => {
+  const unrelated = f("janLow", -8, 14);
+  const historical = {
+    views: { county: "janLow" },
+    modes: { county: "any" },
+    county: [
+      { key: "cloud", op: "min", limit: 80, on: true },
+      unrelated,
+      { key: "cloud", op: "max", limit: 90, on: true },
+    ],
+  };
+  for (const link of [
+    "?cloud=80..90&janLow=-8..14&layer=janLow&match=any&tag=mail",
+    "#view=" + encodeURIComponent(JSON.stringify(historical)),
+  ]) {
+    const warnings = [];
+    const restored = read(link, (m) => warnings.push(m));
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /cloud frequency \(%\).*paused/);
+    assert.deepEqual(restored.county, [freshFilter("cloudyDays"), unrelated]);
+    assert.equal(restored.layer, "janLow");
+    assert.equal(restored.mode, "any");
+    const url = writeViewUrl(new URL(link, base), restored, [1, 0, 0]);
+    assert.equal(url.searchParams.has("cloud"), false);
+    assert.equal(url.searchParams.get("paused"), "cloudyDays");
+    assert.deepEqual(read(url), restored);
+    if (link.startsWith("?")) assert.equal(url.searchParams.get("tag"), "mail");
+  }
+});
+test("a displayed legacy cloud map restores the cloudy-day map, keeping its eye independent", () => {
+  for (const link of [
+    "?layer=cloud",
+    "?janLow=-2..1&layer=cloud",
+    "?cloud=191..201&layer=cloud",
+    "#view=" +
+      encodeURIComponent(
+        JSON.stringify({
+          county: [f("janLow", -2, 1)],
+          views: { county: "cloud" },
+        }),
+      ),
+  ]) {
+    const warnings = [];
+    const s = read(link, (m) => warnings.push(m));
+    assert.equal(s.layer, "cloudyDays");
+    assert.deepEqual(
+      s.county.find((f) => f.key === "cloudyDays"),
+      freshFilter("cloudyDays"),
+    );
+    assert.equal(warnings.length, 1);
+  }
+  assert.deepEqual(read("?filters=none&layer=cloud").county, []);
+});
+test("an explicit days range wins over any legacy percentage, whether active or paused", () => {
+  for (const paused of [false, true]) {
+    const native = f("cloudyDays", 12, 20, { on: !paused });
+    const status = paused ? "&paused=cloudyDays" : "";
+    for (const link of [
+      "?cloud=63..70&cloudyDays=12..20&layer=cloud" + status,
+      "?cloudyDays=12..20&cloud=63..70&layer=cloud" + status,
+      "#view=" +
+        encodeURIComponent(
+          JSON.stringify({
+            layer: "cloud",
+            county: [native, { key: "cloud", min: 63, max: 70, on: true }],
+          }),
+        ),
+    ]) {
+      const warnings = [];
+      const s = read(link, (m) => warnings.push(m));
+      assert.deepEqual(s.county, [native]);
+      assert.equal(s.layer, "cloudyDays");
+      assert.equal(warnings.length, 1);
+      assert.match(warnings[0], /saved Cloudy Days range/);
+    }
+  }
+});

@@ -1,5 +1,6 @@
 // A catalog entry groups interchangeable measures. Each card and shared URL
 // keeps its concrete measure key so several hazards or place types can coexist.
+import { coverKeys, regionKeys } from "./landscape.js";
 import { layers, freshFilter } from "./model.js";
 
 const single = (key, description, searchTerms) => ({
@@ -33,15 +34,23 @@ export const catalog = [
         "Days per year reaching a temperature you choose.",
         "heat hot warm threshold temperature",
       ),
+      {
+        id: "annualPrecipitation",
+        name: "Annual Precipitation",
+        label: "Measure",
+        description: "Average inches of rainfall or snowfall per year.",
+        keys: ["rainfall", "snowfall"],
+        independentRanges: true,
+      },
       single(
         "wetDays",
         "Days per year with measurable precipitation.",
         "precipitation rain rainy dry",
       ),
       single(
-        "cloud",
-        "How often satellites observe clouds during daylight.",
-        "sunny cloudy sunshine sky",
+        "cloudyDays",
+        "Days per year with at least 80% average countywide cloud cover.",
+        "cloud cover overcast clear sunny cloudy sunshine sky",
       ),
     ],
   },
@@ -53,6 +62,16 @@ export const catalog = [
         "Number of people living in a county.",
         "people populous residents",
       ),
+      {
+        id: "crime",
+        independentRanges: true,
+        name: "County Crime",
+        label: "Measure",
+        description:
+          "Reported violent offenses or homicide deaths per 100,000 residents.",
+        searchTerms: "public safety crime rate",
+        keys: ["violentCrimeRate", "homicideRate"],
+      },
       {
         id: "distance",
         name: "Distance to Places",
@@ -74,6 +93,26 @@ export const catalog = [
   {
     name: "Land & Terrain",
     entries: [
+      {
+        id: "landCover",
+        name: "Land Cover",
+        label: "Cover Type",
+        description:
+          "Choose how much of a county is forest, farmland, grassland, or built up.",
+        searchTerms: "satellite terrain type land use landscape",
+        keys: coverKeys,
+        independentRanges: true,
+      },
+      {
+        id: "ecoregion",
+        name: "Landscape Region",
+        label: "Region Type",
+        description:
+          "Find Prairie Parkland, the Great Plains, or land with a desert climate.",
+        searchTerms: "biome ecoregion",
+        keys: regionKeys,
+        independentRanges: true,
+      },
       single(
         "elevation",
         "Average height above sea level, in feet.",
@@ -122,6 +161,8 @@ export function optionName(key) {
 }
 
 const aliases = {
+  violentCrimeRate: "assault robbery rape murder police offenses",
+  homicideRate: "murder deaths mortality",
   coast:
     "coastal ocean beach seashore gulf bay sound inlet estuary tidal barrier island puget chesapeake outer banks superior michigan huron erie ontario",
   mountains: "mountain mountainous terrain",
@@ -194,7 +235,10 @@ export function changeSubtype(current, key) {
   const next = saved.get(key) ?? newCard(key);
   if (!saved.has(key)) {
     const initial = newCard(current.key);
-    if (current.min !== initial.min || current.max !== initial.max) {
+    if (
+      !entryFor(key).independentRanges &&
+      (current.min !== initial.min || current.max !== initial.max)
+    ) {
       const [lo, hi] = layers[key].domain;
       if (current.min <= hi && current.max >= lo) {
         next.min = Math.max(lo, current.min);

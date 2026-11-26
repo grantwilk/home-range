@@ -12,6 +12,12 @@ The prototype review found that small counties were hard to select on a phone an
 - **Nearby places.** Distances use the nearest eligible site and can cross a county or state line. The map thins visible pins at national scale and measures against the full directory. Checks cover hospitals, grocery stores, schools, commercial airports, city populations, and custom coordinates.
 - **Natural features.** The source review checked all five Great Lakes, Alaska, Hawaii, mountain ranges, park inholdings, the Fox River at Aurora, and Powers Lake. A Denali boundary test identified a discrepancy along a long east–west segment. Subdividing that segment brought the boundary reading below 0.001 mile. Tests also cover holes and overlapping polygons at the date line.
 
+## County Landscape Design
+
+The design review used three searches to choose the geographic measures. A farms-and-woods search needs both shares in the same county, so the filter stores the full land-cover mix and allows one card per class. A prairie search needs both current grass cover and regional context, since cropland can occupy former prairie. A desert search needs a climate classification, since bare rock, sand, and sparse vegetation also occur outside deserts. Address-level proximity would require a different calculation from each home to a mapped feature.
+
+The source review selected native 30 m NLCD cells for visible land cover, Forest Service EcoMap divisions for Prairie Parkland and the Great Plains, and historical Köppen–Geiger climate classes for hot and cold desert. The map keeps the source year with each measure. The county calculations remove open water from the land-cover denominator and preserve trace values at the ends of the scale. Independent checks compared farm, forest, developed, and grassland shares in eight counties against the MRLC county reports. [Land Cover and Region Methods](README.md#county-landscapes) · [MRLC County Reports](https://www.mrlc.gov/eva/)
+
 ## Release Checks
 
 The browser suite exercises the production build under the project URL path at desktop and phone viewport sizes. It checks map bounds, slider handles, filter combinations, layer switching, shared links, geometry downloads, and a reload with an earlier script in the browser cache. The data files include their coverage and source notes. [Data Coverage](README.md#data-coverage)

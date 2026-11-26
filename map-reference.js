@@ -256,7 +256,7 @@ export class ReferenceMap {
     const reserved = [];
     const symbols = [];
     for (const label of document.querySelectorAll(
-      "#statelabels text,#map-controls button,#map-controls .compass",
+      "#statelabels text,.map-scope,#map-controls button,#map-controls .compass",
     )) {
       const r = label.getBoundingClientRect();
       if (!r.width || !r.height || getComputedStyle(label).opacity === "0")

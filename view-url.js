@@ -14,9 +14,11 @@ const settings = new Set([
   "cities.population",
 ]);
 const isLayer = (key) => Object.hasOwn(layers, key);
+// Retired percentage-based cloud links must reach the model’s unit migration.
+const readableLayer = (key) => key === "cloud" || isLayer(key);
 const isSetting = (key) =>
   settings.has(key) ||
-  isLayer(key) ||
+  readableLayer(key) ||
   (key.endsWith(".unit") &&
     isLayer(key.slice(0, -5)) &&
     layers[key.slice(0, -5)].facility);
@@ -50,7 +52,8 @@ export function readViewUrl(url, warn) {
     const key = f.key;
     // Legacy shares expressed travel-time ranges with a unit query parameter.
     // Pass only the old minute marker to parseView for explicit migration.
-    if (layers[key].facility && q.get(key + ".unit") === "min") f.units = "min";
+    if (layers[key]?.facility && q.get(key + ".unit") === "min")
+      f.units = "min";
     if (key === "heatDays" && q.has("heatDays.cutoff"))
       f.cutoff = numeric(q.get("heatDays.cutoff"));
     if (key === "cities" && q.has("cities.population"))
@@ -72,16 +75,20 @@ export function readViewUrl(url, warn) {
   }
   const county = [];
   for (const [key, text] of q) {
-    if (!isLayer(key)) continue;
+    if (!readableLayer(key)) continue;
     county.push(
       restoreOptions({ key, ...readRange(text), on: !paused.has(key) }),
     );
   }
   if (county.length || q.get("filters") === "none") raw.county = county;
-  if (isLayer(raw.layer) && q.get("filters") !== "none") {
+  if (readableLayer(raw.layer) && q.get("filters") !== "none") {
     raw.county ??= defaults().county;
     if (!raw.county.some((f) => f.key === raw.layer))
-      raw.county.push(restoreOptions(freshFilter(raw.layer)));
+      raw.county.push(
+        isLayer(raw.layer)
+          ? restoreOptions(freshFilter(raw.layer))
+          : { key: raw.layer, on: false },
+      );
   }
   return raw;
 }

@@ -1,6 +1,6 @@
 // Run against the release bundle nested under a project path, as on GitHub Pages.
 import { projection } from "../spatial.js";
-import { pickMeasure } from "./catalog-browser.mjs";
+import { checkCatalogLayout, pickMeasure } from "./catalog-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
 import { checkPdfExport } from "./pdf-browser.mjs";
@@ -72,6 +72,7 @@ async function checkNationalFit(page) {
       const tools = bounds(".maptools");
       const legend = bounds(".legend");
       return (
+        Math.abs(map.top - bounds(".mapcard").top) <= 1 &&
         Math.abs(map.bottom - bounds(".mapcard").bottom) <= 1 &&
         counties.width > 0 &&
         counties.left >= map.left - 1 &&
@@ -110,6 +111,47 @@ async function checkLowerMapInteraction(page) {
   await page.locator("#close").click();
   await page.locator("#fit").click();
   await checkNationalFit(page);
+}
+
+async function checkUpperMapInteraction(page, base) {
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(base + "?extent=9,-3500,-3000");
+    await page.locator("#map.zoomed").waitFor();
+    const point = await page.evaluate(() => {
+      const logo = document.querySelector(".map-scope").getBoundingClientRect();
+      const actions = document
+        .querySelector(".map-actions")
+        .getBoundingClientRect();
+      const x = (logo.right + actions.left) / 2;
+      const y = logo.top + logo.height / 2;
+      return { x, y, uid: document.elementFromPoint(x, y)?.dataset.uid };
+    });
+    assert.match(
+      point.uid ?? "",
+      /^c[0-9]{5}$/,
+      "A county fills the open toolbar area",
+    );
+    await page.mouse.click(point.x, point.y);
+    await page.locator("#locate-detail").waitFor();
+    assert.ok(
+      (await page.locator("#dialog-body").innerText()).includes(
+        "FIPS " + point.uid.slice(1),
+      ),
+    );
+    await page.locator("#close").click();
+
+    const viewport = page.locator("#viewport");
+    const before = await viewport.getAttribute("transform");
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.down();
+    await page.mouse.move(point.x + 12, point.y + 30, { steps: 5 });
+    await page.mouse.up();
+    assert.notEqual(await viewport.getAttribute("transform"), before);
+  }
 }
 
 async function checkPlaceSearchAndToolbar(page, base) {
@@ -220,6 +262,246 @@ async function checkPlaceSearchAndToolbar(page, base) {
   assertCentered(-90.14, 44.65);
 }
 
+async function checkLandscape(page, base) {
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.goto(base + "?filters=none");
+  await page.locator("#areas path").first().waitFor();
+  for (const [term, family, key, bound, amount] of [
+    ["farms", "landCover", "farmCover", "min", "30"],
+    ["buildings", "landCover", "developedCover", "max", "20"],
+    ["desert", "ecoregion", "desertClimate", "max", "0"],
+  ]) {
+    await page.locator("#add-filter").click();
+    await page.locator("#catalog-search").fill(term);
+    await pickMeasure(page, family, key);
+    const row = page.locator(`.filter-row[data-key="${key}"]`);
+    await checkGrips(row);
+    const number = row.locator(`.num[data-bound="${bound}"]`);
+    await number.fill(amount);
+    await number.press("Enter");
+  }
+  await page.locator('[data-eye="farmCover"]').click();
+  await page.waitForURL(
+    (url) =>
+      url.searchParams.get("layer") === "farmCover" &&
+      url.searchParams.get("desertClimate") === "0..0",
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.locator("#areas path").first().waitFor();
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Crops & Pasture",
+  );
+  assert.match(await page.locator("#legend-sub").innerText(), /county land/);
+  assert.equal(await page.locator(".filter-row[data-key]").count(), 3);
+  await page.locator("#search").click();
+  await page.locator("#query").fill("55025");
+  await page.locator('#suggest [data-place="c55025"]').click();
+  const detail = page.locator(".landscape-detail[open]");
+  await detail.waitFor();
+  assert.match(await detail.innerText(), /Crops & Pasture/);
+  assert.match(await detail.innerText(), /Prairie Parkland/);
+  const shares = await detail
+    .locator("ul")
+    .first()
+    .locator("li b")
+    .allTextContents();
+  assert.ok(shares.length >= 7 && shares.every((text) => text.endsWith("%")));
+  assert.equal(
+    await detail.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    true,
+  );
+  await page.locator("#close").click();
+}
+
+async function checkAnnualPrecipitation(page, base) {
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.goto(base + "?filters=none");
+  await page.locator("#areas path").first().waitFor();
+  for (const [key, limit] of [
+    ["snowfall", "0"],
+    ["rainfall", "50"],
+  ]) {
+    await page.locator("#add-filter").click();
+    await page.locator("#catalog-search").fill(key);
+    await pickMeasure(page, "annualPrecipitation", key);
+    const card = page.locator(`.filter-row[data-key="${key}"]`);
+    await checkGrips(card);
+    const max = card.locator('.num[data-bound="max"]');
+    await max.fill(limit);
+    await max.press("Enter");
+    await page.waitForURL((url) => url.searchParams.get(key) === "0.." + limit);
+  }
+  await page.locator('[data-eye="rainfall"]').click();
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Annual Rainfall",
+  );
+  assert.match(await page.locator("#legend-sub").innerText(), /1991–2020/);
+  assert.match(await page.locator("#credits").innerText(), /ERA5/);
+  // Miami-Dade averages zero inches of snow. Dane gets both rain and snow.
+  const county = (id) => page.locator(`#areas path[data-uid="c${id}"]`);
+  await page
+    .locator('#areas path[data-uid="c55025"][fill="#d8ded4"]')
+    .waitFor();
+  assert.doesNotMatch(
+    await county("12086").getAttribute("fill"),
+    /url\(|#d8ded4/,
+  );
+  await page.locator('[data-eye="snowfall"]').click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.locator("#areas path").first().waitFor();
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Annual Snowfall",
+  );
+  assert.equal(await page.locator("#legend-unit").innerText(), "in/yr");
+  assert.match(
+    await page.locator("#legend-sub").innerText(),
+    /excluding 2020–21/,
+  );
+  assert.match(
+    await page.locator("#credits").innerText(),
+    /NOAA National Gridded Snowfall Analysis/,
+  );
+  assert.equal(new URL(page.url()).searchParams.get("rainfall"), "0..50");
+  assert.equal(new URL(page.url()).searchParams.get("snowfall"), "0..0");
+  await page.locator("#any").click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[data-uid="c55025"]').getAttribute("fill") !==
+      "#d8ded4",
+  );
+}
+
+async function checkCrime(page, base) {
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.goto(base + "?filters=none");
+  await page.locator("#areas path").first().waitFor();
+  await page.locator("#add-filter").click();
+  await page.locator("#catalog-search").fill("crime");
+  const picker = page.locator(
+    '[data-group="Population & Nearby Places"] [data-pick="crime"]',
+  );
+  assert.match(await picker.innerText(), /County Crime/);
+  await picker.click();
+  const card = page.locator('.filter-row[data-key="violentCrimeRate"]');
+  assert.equal(
+    await card.locator("[data-subtype]").inputValue(),
+    "violentCrimeRate",
+  );
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Reported Violent Crime Rate",
+  );
+  assert.match(await page.locator("#legend-sub").innerText(), /2014.*2016/);
+  assert.match(
+    await page.locator("#credits").innerText(),
+    /County Health Rankings|CHR&R/i,
+  );
+  const max = card.locator('.num[data-bound="max"]');
+  assert.equal(await max.inputValue(), "2000");
+  await max.fill("0");
+  await max.press("Enter");
+  await page.waitForURL(
+    (url) => url.searchParams.get("violentCrimeRate") === "0..0",
+  );
+  const fill = (fips) =>
+    page.locator(`#areas path[data-uid="c${fips}"]`).getAttribute("fill");
+  // The URL changes immediately; county fills update on the next animation frame.
+  await page
+    .locator('#areas path[data-uid="c55025"][fill="#d8ded4"]')
+    .waitFor();
+  assert.equal(
+    await fill("15005"),
+    "url(#uncertain)",
+    "Kalawao has no published rate",
+  );
+  assert.equal(await fill("55025"), "#d8ded4", "Dane exceeds zero");
+  assert.doesNotMatch(
+    await fill("55078"),
+    /url\(|#d8ded4/,
+    "Menominee has a numeric zero",
+  );
+  assert.equal(
+    await page.locator('#areas path[fill="url(#uncertain)"]').count(),
+    191,
+  );
+  assert.equal(
+    new URL(page.url()).searchParams.get("violentCrimeRate"),
+    "0..0",
+  );
+  await card.locator(".switch").click();
+  assert.equal(
+    await fill("15005"),
+    "url(#missing)",
+    "a missing map value with no active filter",
+  );
+  await page.locator("#add-filter").click();
+  await pickMeasure(page, "crime", "homicideRate");
+  await page.locator('[data-eye="homicideRate"]').click();
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Homicide Death Rate",
+  );
+  assert.match(await page.locator("#legend-sub").innerText(), /2017.*2023/);
+  assert.match(
+    await page.locator("#credits").innerText(),
+    /NCHS|National Center for Health Statistics/i,
+  );
+  const homicide = page.locator('.filter-row[data-key="homicideRate"]');
+  assert.equal(
+    await homicide.locator('.num[data-bound="max"]').inputValue(),
+    "65",
+  );
+  for (const input of await homicide.locator(".num").all()) {
+    assert.equal(await input.getAttribute("step"), "0.1");
+    await input.fill("2.3");
+    await input.press("Enter");
+  }
+  await page.waitForURL(
+    (url) => url.searchParams.get("homicideRate") === "2.3..2.3",
+  );
+  await page
+    .locator('#areas path[data-uid="c17031"][fill="#d8ded4"]')
+    .waitFor();
+  assert.doesNotMatch(
+    await fill("55025"),
+    /url\(|#d8ded4/,
+    "Dane matches 2.3 at both ends",
+  );
+  assert.equal(await fill("17031"), "#d8ded4", "Cook exceeds 2.3");
+  assert.equal(
+    await fill("55078"),
+    "url(#uncertain)",
+    "Menominee's mortality rate is suppressed",
+  );
+  const shared = new URL(page.url());
+  assert.equal(shared.searchParams.get("layer"), "homicideRate");
+  assert.equal(shared.searchParams.get("violentCrimeRate"), "0..0");
+  assert.equal(shared.searchParams.get("homicideRate"), "2.3..2.3");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  await page.locator("#areas path").first().waitFor();
+  assert.equal(
+    await page.locator("#legend-name").innerText(),
+    "Homicide Death Rate",
+  );
+  assert.equal(
+    await card.locator(".switch").getAttribute("aria-checked"),
+    "false",
+  );
+  assert.equal(await card.locator('.num[data-bound="max"]').inputValue(), "0");
+  assert.equal(
+    await page
+      .locator('[data-eye="homicideRate"]')
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+}
+
 const tmp = await mkdtemp(join(tmpdir(), "home-range-browser-"));
 let server, browser;
 try {
@@ -294,7 +576,7 @@ try {
   for (const [family, key] of [
     ["temperature", "julHigh"],
     ["wetDays", "wetDays"],
-    ["cloud", "cloud"],
+    ["cloudyDays", "cloudyDays"],
   ]) {
     await page.locator("#add-filter").click();
     await pickMeasure(page, family, key);
@@ -339,11 +621,11 @@ try {
   await page.locator("#all").click();
   await expectColoredCount(0);
   await page.locator("#any").click();
-  await page.locator('[data-eye="cloud"]').click();
+  await page.locator('[data-eye="cloudyDays"]').click();
   await page.locator("#zoomin").click();
   const editedUrl = new URL(page.url());
   assert.equal(editedUrl.searchParams.get("janLow"), "40..42");
-  assert.equal(editedUrl.searchParams.get("layer"), "cloud");
+  assert.equal(editedUrl.searchParams.get("layer"), "cloudyDays");
   assert.equal(editedUrl.searchParams.get("match"), "any");
   assert.ok(editedUrl.searchParams.has("extent"));
   assert.equal(await page.evaluate(() => history.length), historySize);
@@ -361,18 +643,18 @@ try {
   assert.equal(await exact("janLow", "min").inputValue(), "40");
   assert.equal(await exact("janLow", "max").inputValue(), "42");
   assert.equal(
-    await page.locator('[data-eye="cloud"]').getAttribute("aria-pressed"),
+    await page.locator('[data-eye="cloudyDays"]').getAttribute("aria-pressed"),
     "true",
   );
   assert.equal(await page.locator("#station, #county, #points").count(), 0);
   await page.locator("#search").click();
   await page.locator("#query").fill("04013");
   await page.locator("#query").press("Enter");
-  assert.match(await page.locator("#dialog-body").innerText(), /21.6%/);
+  assert.equal(await page.locator(".detailval").innerText(), "16.7 days/yr");
   await page.locator("#close").click();
   await page.setViewportSize({ width: 375, height: 812 });
   assert.equal(
-    await page.locator('[data-eye="cloud"]').getAttribute("aria-pressed"),
+    await page.locator('[data-eye="cloudyDays"]').getAttribute("aria-pressed"),
     "true",
   );
   assert.equal(await page.locator("#any").getAttribute("aria-pressed"), "true");
@@ -407,8 +689,11 @@ try {
   await filterCutoff.fill("95");
   await filterCutoff.press("Enter");
   assert.equal(await page.locator("#display-cutoff").inputValue(), "87");
-  await page.locator('[data-eye="cloud"]').click();
-  assert.match(await page.locator("#credits").innerText(), /Wilson/);
+  await page.locator('[data-eye="cloudyDays"]').click();
+  assert.match(
+    await page.locator("#credits").innerText(),
+    /North American Regional Reanalysis/,
+  );
   await page.locator("#fold").click();
   assert.equal(await page.locator("#filters").isVisible(), false);
   assert.ok((await page.locator("#map").boundingBox()).height > mapRect.height);
@@ -450,12 +735,16 @@ try {
       "humidity",
       "distance",
       "nature",
+      "landCover",
+      "ecoregion",
       "hazard",
       "heatDays",
       "wetDays",
-      "cloud",
+      "annualPrecipitation",
+      "cloudyDays",
       "elevation",
       "population",
+      "crime",
     ].sort(),
   );
   assert.deepEqual(
@@ -469,23 +758,23 @@ try {
       "Natural Hazards",
     ].sort(),
   );
-  await page.locator('[data-pick="cloud"]').click();
+  await page.locator('[data-pick="cloudyDays"]').click();
   assert.equal(
-    await page.locator('[data-eye="cloud"]').getAttribute("aria-pressed"),
+    await page.locator('[data-eye="cloudyDays"]').getAttribute("aria-pressed"),
     "true",
   );
   assert.match(
-    await page.locator('[data-key="cloud"] .endpoints').innerText(),
-    /Cloudier/,
+    await page.locator('[data-key="cloudyDays"] .endpoints').innerText(),
+    /366 days\/yr/,
   );
   // Use physical pointer events at coincident handles, including a touch gesture
   // in the scrollable mobile sheet. Either side must be independently reachable.
   await page.setViewportSize({ width: 1280, height: 800 });
-  await setBound("cloud", "min", 50);
-  await setBound("cloud", "max", 50);
-  const cloudTrack = row("cloud").locator(".range-track");
+  await setBound("cloudyDays", "min", 50);
+  await setBound("cloudyDays", "max", 50);
+  const cloudTrack = row("cloudyDays").locator(".range-track");
   const gripCenter = async (bound) => {
-    const grip = row("cloud").locator(`[data-grip="${bound}"]`);
+    const grip = row("cloudyDays").locator(`[data-grip="${bound}"]`);
     await grip.scrollIntoViewIfNeeded();
     const box = await grip.boundingBox();
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -499,11 +788,11 @@ try {
   });
   await page.mouse.up();
   assert.ok(
-    Number(await exact("cloud", "min").inputValue()) < 35,
+    Number(await exact("cloudyDays", "min").inputValue()) < 35,
     "drag lower handle left",
   );
-  assert.equal(await exact("cloud", "max").inputValue(), "50");
-  await setBound("cloud", "min", 50);
+  assert.equal(await exact("cloudyDays", "max").inputValue(), "50");
+  await setBound("cloudyDays", "min", 50);
   await page.setViewportSize({ width: 375, height: 812 });
   const rightGrip = await gripCenter("max");
   const mobileTrack = await cloudTrack.boundingBox();
@@ -526,10 +815,10 @@ try {
   });
   await touch.detach();
   assert.ok(
-    Number(await exact("cloud", "max").inputValue()) > 65,
+    Number(await exact("cloudyDays", "max").inputValue()) > 65,
     "drag upper handle right by touch",
   );
-  assert.equal(await exact("cloud", "min").inputValue(), "50");
+  assert.equal(await exact("cloudyDays", "min").inputValue(), "50");
   for (const [key, month, rh] of [
     ["coldHumidity", "December", "47.7%"],
     ["hotHumidity", "July", "41%"],
@@ -566,7 +855,7 @@ try {
       .getAttribute("aria-checked"),
     "true",
   );
-  await page.locator('[data-drop="cloud"]').click();
+  await page.locator('[data-drop="cloudyDays"]').click();
   await setBound("coldHumidity", "max", 47.7);
   await setBound("hotHumidity", "min", 66.5);
   await page.locator("#all").click();
@@ -687,7 +976,7 @@ try {
     "hotHigh",
     "heatDays",
     "wetDays",
-    "cloud",
+    "cloudyDays",
     "coldHumidity",
     "hotHumidity",
     "elevation",
@@ -743,19 +1032,19 @@ try {
     await checkGrips(card);
     await card.locator(".switch").click();
   }
-  await page.locator('[data-eye="cloud"]').click();
-  await setBound("cloud", "min", 21.6);
+  await page.locator('[data-eye="cloudyDays"]').click();
+  await setBound("cloudyDays", "min", 16.7);
   assert.equal(
-    await row("cloud").locator(".switch").getAttribute("aria-checked"),
+    await row("cloudyDays").locator(".switch").getAttribute("aria-checked"),
     "true",
   );
-  await setBound("cloud", "max", 21.6);
-  await expectColoredCount(1);
-  assert.equal(
+  await setBound("cloudyDays", "max", 16.7);
+  await expectColoredCount(2);
+  assert.deepEqual(
     await page
       .locator('#areas path:not([fill="#d8ded4"]):not([fill^="url("])')
-      .getAttribute("data-uid"),
-    "c04013",
+      .evaluateAll((els) => els.map((el) => el.dataset.uid).sort()),
+    ["c04013", "c48033"],
   );
   await pauseActiveFilters(page);
   for (const width of [1280, 320]) {
@@ -884,10 +1173,15 @@ try {
   await page.locator("#share").click();
   assert.equal(await page.locator("#copy-link").inputValue(), page.url());
   await page.locator("#close").click();
+  await checkCatalogLayout(page, base);
   await checkHazards(page, base);
+  await checkLandscape(page, base);
+  await checkAnnualPrecipitation(page, base);
+  await checkCrime(page, base);
   await checkLocalAccess(page, base);
   await checkNature(page, base);
   await checkPdfExport(page, base, tmp);
+  await checkUpperMapInteraction(page, base);
   await checkPlaceSearchAndToolbar(page, base);
   assert.deepEqual(issues, []);
   console.log(
