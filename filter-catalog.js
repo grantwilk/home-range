@@ -123,7 +123,7 @@ export function optionName(key) {
 
 const aliases = {
   coast:
-    "coastal ocean beach seashore gulf superior michigan huron erie ontario",
+    "coastal ocean beach seashore gulf bay sound inlet estuary tidal barrier island puget chesapeake outer banks superior michigan huron erie ontario",
   mountains: "mountain mountainous terrain",
   parks:
     "outdoors forest preserve state parks national parks national forests state forests",

@@ -19,6 +19,10 @@ from shapely.geometry import box
 COAST_URL = (
     "https://www2.census.gov/geo/tiger/TIGER2025/COASTLINE/tl_2025_us_coastline.zip"
 )
+SHORELINE_URL = "https://coast.noaa.gov/htdata/Shoreline/us_medium_shoreline.zip"
+LEGAL_STATES_URL = (
+    "https://www2.census.gov/geo/tiger/TIGER2025/STATE/tl_2025_us_state.zip"
+)
 GMBA_URL = (
     "https://data.earthenv.org/mountains/standard/GMBA_Inventory_v2.0_standard.zip"
 )
@@ -27,6 +31,14 @@ SOURCES = {
     "coast": (
         COAST_URL,
         "c88e68274b72e7cfded0bb0846c8c78f2c078e5f361973792a84c67b0975459c",
+    ),
+    "shoreline": (
+        SHORELINE_URL,
+        "3a5d7e0d36824fc96e58148b681c15478f6a10a99e669274e2041164217a13e8",
+    ),
+    "legal-states": (
+        LEGAL_STATES_URL,
+        "59a220888a8d9be8117c4fcd38f542bd02d81abf0d198c78113595ad540dd957",
     ),
     "gmba": (
         GMBA_URL,
@@ -45,10 +57,13 @@ COAST_NAMES = {
     "Great Lakes": "Great Lakes shoreline",
 }
 COAST_DEFINITION = (
-    "Straight-line distance to U.S. ocean, gulf, estuary or Great Lakes shoreline "
-    "classified as coastline (L4150) by the Census Bureau. Includes Alaska, Hawaii "
-    "and the U.S. shore of all five Great Lakes. A shoreline can be rocky, marshy "
-    "or private. Beach type and public access are outside this dataset."
+    "Straight-line distance to mapped U.S. shoreline. In the contiguous coastal "
+    "states, NOAA charted shores include bays, sounds, inlets, tidal rivers and "
+    "islands. Only captured shoreline arcs are included; invented chart closures "
+    "and estimated joins are excluded. The 1998 NOAA compilation represents 1988–1992 "
+    "chart coverage. Changing deltas, eroding coasts and recent construction can differ "
+    "today. Alaska, Hawaii and all five Great Lakes retain the 2025 Census coastline, "
+    "with less detail in some inlets. Shores may be rocky, marshy or private."
 )
 MOUNTAIN_DEFINITION = (
     "Straight-line distance to the U.S. portion of a named mountain-range footprint "
@@ -84,24 +99,57 @@ def source(cache, key):
     return dest
 
 
-def coast_features(path, states):
-    water = gpd.read_file(path, columns=["NAME", "MTFCC"]).to_crs(4326)
-    if set(water.MTFCC) != {"L4150"}:
-        raise ValueError("Unexpected TIGER coastline class")
-    # The three disjoint envelopes separate the states from U.S. territories.
-    # Retain whole original lines, including reefs and tiny offshore islands
-    # missing from the more generalized state cartographic boundary file.
-    regions = [
-        states[~states.STUSPS.isin(["AK", "HI"])],
-        states[states.STUSPS == "AK"],
-        states[states.STUSPS == "HI"],
+def coast_features(chart_path, census_path, legal_path, states):
+    # TIGER state boundaries extend into territorial waters, unlike cartographic
+    # state outlines trimmed to the coast. Clip existing lines; never construct
+    # shore by taking the boundary of a clipped polygon.
+    legal = gpd.read_file(legal_path, columns=["STATEFP", "STUSPS"]).to_crs(4326)
+    contiguous = legal[
+        (legal.STATEFP.astype(int) < 60) & ~legal.STUSPS.isin(["AK", "HI"])
     ]
-    envelopes = [box(*region.total_bounds).buffer(0.2) for region in regions]
-    selected = water[water.intersects(shapely.union_all(envelopes))]
-    if set(selected.NAME) != set(COAST_NAMES):
-        raise ValueError("Unexpected coastal basin name or missing Great Lakes")
-    for row in selected.itertuples():
-        yield COAST_NAMES[row.NAME], row.geometry
+    if len(contiguous) != 49:
+        raise ValueError("Expected contiguous states and DC for the shoreline clip")
+    country = shapely.union_all(contiguous.geometry)
+    shapely.prepare(country)
+    chart = gpd.read_file(
+        chart_path,
+        columns=["REGIONS", "S_ARC_CODE"],
+        where="S_ARC_CODE = 1 AND REGIONS <> 'L'",
+    ).to_crs(4326)
+    # Regional overlaps are duplicated in the NOAA archive, including GS/SG
+    # across the Florida Keys. A normalized line has the same key in either direction.
+    chart = chart.loc[~chart.geometry.normalize().duplicated()]
+    names = {
+        "P": "Pacific shoreline",
+        "N": "Atlantic shoreline",
+        "M": "Atlantic shoreline",
+        "S": "Atlantic shoreline",
+        "MN": "Atlantic shoreline",
+        "NM": "Atlantic shoreline",
+        "G": "Gulf shoreline",
+        "GS": "Florida Keys shoreline",
+        "SG": "Florida Keys shoreline",
+    }
+    if not set(chart.REGIONS).issubset(names) or set(chart.S_ARC_CODE) != {1}:
+        raise ValueError("Unexpected NOAA shoreline classes")
+    inside = shapely.covers(country, chart.geometry.array)
+    for row, whole in zip(chart.itertuples(), inside, strict=True):
+        yield (
+            names[row.REGIONS],
+            row.geometry if whole else row.geometry.intersection(country),
+        )
+
+    census = gpd.read_file(census_path, columns=["NAME", "MTFCC"]).to_crs(4326)
+    if set(census.MTFCC) != {"L4150"}:
+        raise ValueError("Unexpected TIGER coastline class")
+    # AK and HI features already belong to the U.S. Census source; envelopes
+    # separate them from territorial datasets and retain offshore islands.
+    for state in ["AK", "HI"]:
+        zone = box(*states.loc[states.STUSPS == state].total_bounds).buffer(0.2)
+        for row in census[census.intersects(zone)].itertuples():
+            yield COAST_NAMES[row.NAME], row.geometry
+    for geom in census.loc[census.NAME == "Great Lakes"].geometry:
+        yield COAST_NAMES["Great Lakes"], geom
 
 
 def mountain_features(path, states):
@@ -154,10 +202,15 @@ def main():
     if args.layer in {"both", "coast"}:
         write_layer(
             "coast",
-            coast_features(source(args.cache, "coast"), states),
-            source="U.S. Census Bureau, 2025 TIGER/Line Coastline",
-            url=COAST_URL,
-            period="2025 TIGER/Line",
+            coast_features(
+                source(args.cache, "shoreline"),
+                source(args.cache, "coast"),
+                source(args.cache, "legal-states"),
+                states,
+            ),
+            source="NOAA National Ocean Service, Medium Resolution Digital Vector Shoreline; U.S. Census Bureau, TIGER/Line",
+            url="https://shoreline.noaa.gov/med-res.html",
+            period="1998 NOAA compilation · 2025 TIGER/Line",
             definition=COAST_DEFINITION,
             geometry="line",
         )
