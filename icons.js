@@ -24,7 +24,6 @@ const shapes = {
   minus: '<path d="M5 12h14"/>',
   fit: '<path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/>',
   cross: '<path d="m6 6 12 12M18 6 6 18"/>',
-  rotate: '<path d="M4 11a8 8 0 1 1 2 7M4 5v6h6"/>',
   location:
     '<circle cx="12" cy="12" r="6"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>',
 };

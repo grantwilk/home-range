@@ -22,15 +22,35 @@
     <main class="workspace">
       <section class="mapcard" aria-label="Interactive United States map">
         <div class="map-toolbar">
-          <span class="map-scope"
-            ><img src="./assets/mark.svg" width="27" height="27" alt="" />Home
-            Range</span
+          <span class="map-scope" title="Home Range"
+            ><img src="./assets/mark.svg" width="27" height="27" alt="" /><span
+              >Home Range</span
+            ></span
           >
           <span class="map-divider"></span
           ><span id="grain" class="scale-label">U.S. County Map</span>
-          <button class="map-search" id="search">
-            <i data-icon="search"></i>Find a Place <kbd>/</kbd>
-          </button>
+          <div class="map-actions">
+            <button class="map-search" id="search">
+              <i data-icon="search"></i>Find a Place <kbd>/</kbd>
+            </button>
+            <button
+              id="share"
+              class="secondary"
+              aria-label="Share View"
+              title="Share View"
+            >
+              <i data-icon="share"></i><span>Share View</span>
+            </button>
+            <button
+              id="export-pdf"
+              class="secondary"
+              aria-label="Export PDF"
+              title="Export this map with town labels and a key"
+              disabled
+            >
+              <i data-icon="download"></i><span>Export PDF</span>
+            </button>
+          </div>
         </div>
         <div id="mapfield">
           <svg
@@ -130,23 +150,15 @@
       <aside class="settings" id="settings" aria-labelledby="filters-title">
         <div class="railtitle">
           <h1 id="filters-title">Filters</h1>
-          <button
-            id="share"
-            class="secondary"
-            aria-label="Share View"
-            title="Share View"
+          <div
+            class="logic"
+            id="rail-controls"
+            role="group"
+            aria-label="Combine filters"
           >
-            <i data-icon="share"></i><span>Share View</span>
-          </button>
-          <button
-            id="export-pdf"
-            class="secondary"
-            aria-label="Export PDF"
-            title="Export this map with town labels and a key"
-            disabled
-          >
-            <i data-icon="download"></i><span>Export PDF</span>
-          </button>
+            <button id="all">Match All</button>
+            <button id="any">Match Any</button>
+          </div>
           <button
             id="fold"
             class="iconbtn"
@@ -156,25 +168,6 @@
           >
             <i data-icon="chevron"></i>
           </button>
-        </div>
-        <div id="rail-controls">
-          <div class="matchbar">
-            <div class="logic" role="group" aria-label="Combine filters">
-              <button id="all">Match All</button
-              ><button id="any">Match Any</button>
-            </div>
-            <span class="counttag" id="filter-count" role="status"
-              >0 active</span
-            >
-            <button
-              id="reset"
-              class="iconbtn"
-              title="Clear Active Filters"
-              aria-label="Clear Active Filters"
-            >
-              <i data-icon="rotate"></i>
-            </button>
-          </div>
         </div>
         <div
           id="filters"

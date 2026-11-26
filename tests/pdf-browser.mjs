@@ -91,16 +91,16 @@ export async function checkPdfExport(page, base, directory) {
       "Export PDF must be available from the map",
     );
     const before = page.url();
-    const palette = await page
-      .locator("#colors b")
-      .evaluateAll((bands) =>
-        bands.map((band) =>
-          getComputedStyle(band)
-            .backgroundColor.match(/\d+/g)
-            .map(Number)
-            .slice(0, 3),
-        ),
-      );
+    // Distance layers can repaint the legend between Playwright calls. Read
+    // its current nodes and their computed colors in one browser turn.
+    const palette = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#colors b"), (band) =>
+        getComputedStyle(band)
+          .backgroundColor.match(/\d+/g)
+          .map(Number)
+          .slice(0, 3),
+      ),
+    );
     const [saved] = await Promise.all([
       page.waitForEvent("download", { timeout: 60000 }),
       action.click(),

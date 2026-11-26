@@ -760,6 +760,7 @@ dialog::backdrop {
   background: #edf1e8;
 }
 .mapcard {
+  container: map-panel / inline-size;
   min-height: 0;
   min-width: 0;
   position: relative;
@@ -801,8 +802,14 @@ dialog::backdrop {
   background: #fcfdf9;
   border-radius: 7px;
 }
-.map-search {
+.map-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+}
+.map-search {
+  white-space: nowrap;
   gap: 7px;
   padding: 8px 10px;
   color: var(--soft);
@@ -883,9 +890,6 @@ h1 {
   letter-spacing: -1px;
   color: var(--ink);
 }
-#share {
-  margin-left: auto;
-}
 #share,
 #export-pdf {
   white-space: nowrap;
@@ -894,13 +898,6 @@ h1 {
   padding: 7px 9px;
 }
 @container filter-panel (max-width: 340px) {
-  #share span {
-    display: none;
-  }
-  #share {
-    width: 35px;
-    padding-inline: 0;
-  }
   .railtitle {
     padding-inline: 10px;
   }
@@ -909,28 +906,14 @@ h1 {
   display: none;
 }
 #rail-controls {
-  padding: 14px 16px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.matchbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.logic {
-  margin: 0;
+  margin: 0 0 0 auto;
   background: #f2f4ef;
+}
+.workspace.folded #fold {
+  margin-left: auto;
 }
 .logic button {
   padding: 4px 10px;
-  white-space: nowrap;
-}
-.counttag {
-  font-size: 12px;
-  color: #53674e;
-  font-weight: 600;
   white-space: nowrap;
 }
 #filters {
@@ -1017,13 +1000,6 @@ h1 {
   padding: 12px 16px;
   border-top: 1px solid var(--line);
 }
-.matchbar #reset {
-  width: 30px;
-  height: 30px;
-}
-.matchbar .counttag {
-  margin-left: auto;
-}
 .searchinput {
   width: 100%;
   font-size: 16px;
@@ -1062,9 +1038,6 @@ h1 {
   }
   .folded #fold svg {
     transform: rotate(180deg);
-  }
-  #rail-controls {
-    padding: 5px 12px;
   }
   .logic button {
     padding-block: 4px;
@@ -1154,10 +1127,44 @@ h1 {
     height: 36px;
   }
 }
-@media (max-width: 480px) {
+@container map-panel (max-width: 780px) {
   .map-toolbar .scale-label,
   .map-toolbar .map-divider {
     display: none;
+  }
+}
+@container map-panel (max-width: 590px) {
+  .map-toolbar {
+    padding-inline: 10px;
+    gap: 6px;
+  }
+  .map-actions {
+    gap: 4px;
+  }
+  #share span,
+  #export-pdf span,
+  .map-search kbd {
+    display: none;
+  }
+  #share,
+  #export-pdf {
+    width: 35px;
+    height: 35px;
+    padding: 0;
+  }
+}
+@container map-panel (max-width: 360px) {
+  .map-scope span {
+    display: none;
+  }
+}
+@container filter-panel (max-width: 285px) {
+  .railtitle h1 {
+    font-size: 21px;
+  }
+  .logic button {
+    font-size: 12px;
+    padding-inline: 6px;
   }
 }
 @media (max-height: 530px) and (orientation: landscape) {
@@ -1192,9 +1199,6 @@ h1 {
   }
   .colors div {
     font-size: 10px;
-  }
-  #rail-controls {
-    padding: 6px 10px;
   }
 }
 

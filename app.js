@@ -1,6 +1,7 @@
 import { combine, projection } from "./spatial.js";
 import { FacilityMap } from "./facility-map.js";
-import { ReferenceMap } from "./map-reference.js";
+import { ReferenceMap, loadCityPoints } from "./map-reference.js";
+import { findPlaces, townDescription } from "./place-search.js";
 import { citySize } from "./facility-model.js";
 import {
   catalogMatches,
@@ -711,17 +712,10 @@ function refresh(continuous = false) {
   access?.update(local, state.layer, state.mode, votes);
   referenceMap?.update(local);
   $("grain").textContent = hasAccess ? "U.S. Proximity Map" : "U.S. County Map";
-  $("filter-count").textContent = active.length + " active";
-  $("reset").disabled = !active.length;
 
   paintLegend();
 }
 
-function clearFilters() {
-  filters().forEach((f) => (f.on = false));
-  renderControls();
-  refresh();
-}
 function highlight() {
   const h = $("highlight");
   h.replaceChildren();
@@ -739,65 +733,152 @@ function highlight() {
 function search() {
   showDialog(
     "Find a Place",
-    '<label class="field" for="query">Search ' +
-      (access?.active
-        ? "counties by name, state or identifier, or enter latitude, longitude"
-        : "counties by name, state or identifier") +
-      '</label><input class="searchinput" id="query" type="search" autocomplete="off" placeholder="Name or state"><div id="suggest"></div>',
+    '<label class="field" for="query">City, town, county, state, county FIPS, or coordinates</label><input class="searchinput" id="query" type="search" autocomplete="off" placeholder="Madison, WI"><div id="suggest"></div><p class="micro" id="town-load" role="status"></p>',
   );
   const input = $("query"),
-    list = [...places].sort((a, b) => a.name.localeCompare(b.name));
-  const run = () => {
-    const coords =
-      access?.active &&
-      input.value.match(
-        /^\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*$/,
-      );
-    if (coords && Math.abs(+coords[1]) <= 90 && Math.abs(+coords[2]) <= 180) {
-      const point = { lat: +coords[1], lon: +coords[2] };
-      $("suggest").innerHTML =
-        '<button class="optionrow" id="inspect-coordinate">Check Nearby Places Here</button>';
-      $("inspect-coordinate").onclick = () => pointDetails(null, point);
+    suggestions = $("suggest"),
+    status = $("town-load");
+  let townRows = referenceMap?.cityPoints ?? [],
+    loading = false,
+    queued = null;
+  function goTo(lon, lat, name) {
+    const xy = projection([lon, lat]);
+    if (!xy) {
+      notify("This location is outside the U.S. map.");
       return;
     }
-    const q = input.value
-      .trim()
-      .toLowerCase()
-      .replace(/,/g, "")
-      .split(/\s+/)
-      .filter(Boolean);
-    const matches = list.filter((p) => {
-      const txt = [p.name, p.state, p.stateName, p.id].join(" ").toLowerCase();
-      return q.every((t) => txt.includes(t));
-    });
-    $("suggest").innerHTML =
+    selected = null;
+    highlight();
+    dialog.close();
+    centerMap(xy[0], xy[1], Math.max(48, zoom));
+    notify("Map centered on " + name);
+  }
+  function coordinates() {
+    return input.value.match(
+      /^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*$/,
+    );
+  }
+  function run() {
+    const q = input.value.trim();
+    if (!q) {
+      suggestions.innerHTML =
+        '<p class="micro">Add a state to distinguish places with the same name.</p>';
+      return;
+    }
+    const coords = coordinates();
+    if (coords) {
+      const lat = Number(coords[1]),
+        lon = Number(coords[2]);
+      if (
+        Math.abs(lat) > 90 ||
+        Math.abs(lon) > 180 ||
+        !projection([lon, lat])
+      ) {
+        suggestions.innerHTML =
+          '<p class="micro">Enter latitude, longitude within the U.S. map.</p>';
+        return;
+      }
+      suggestions.innerHTML =
+        '<button class="optionrow" id="inspect-coordinate">' +
+        (access?.active ? "Check Nearby Places Here" : "Center Map Here") +
+        "</button>";
+      $("inspect-coordinate").onclick = () =>
+        access?.active
+          ? pointDetails(null, { lat, lon })
+          : goTo(lon, lat, lat + ", " + lon);
+      return;
+    }
+    const { total, results } = findPlaces(q, places, townRows);
+    const count = loading
+      ? "County matches while cities and towns load"
+      : number(total) + " " + (total === 1 ? "result" : "results");
+    suggestions.innerHTML =
       '<p class="micro">' +
-      number(matches.length) +
-      " results" +
-      (matches.length > 25 ? " · Showing first 25" : "") +
+      count +
+      (total > results.length ? " · Showing first " + results.length : "") +
       "</p>" +
-      matches
-        .slice(0, 25)
-        .map(
-          (p) =>
+      results
+        .map((item, i) => {
+          if (item.kind === "town") {
+            const { label, detail } = townDescription(item);
+            return (
+              '<button class="optionrow" data-town="' +
+              i +
+              '"><span>' +
+              esc(label) +
+              "</span><small>" +
+              esc(detail) +
+              "</small></button>"
+            );
+          }
+          const p = item.row;
+          return (
             '<button class="optionrow" data-place="' +
             p.uid +
             '"><span>' +
             esc(p.name) +
             " <small>" +
-            p.state +
+            esc(p.state) +
             "</small></span><small>" +
             (metric() && !metric().facility
               ? countyReading(p, state.layer, state.cutoff)
-              : "") +
-            "</small></button>",
-        )
+              : "County") +
+            "</small></button>"
+          );
+        })
         .join("");
+    for (const button of suggestions.querySelectorAll("[data-town]")) {
+      const item = results[Number(button.dataset.town)];
+      const [, lon, lat] = item.row;
+      button.onclick = () => goTo(lon, lat, townDescription(item).label);
+    }
+  }
+  async function loadTowns() {
+    loading = true;
+    status.textContent = "Loading the city and town directory…";
+    run();
+    try {
+      townRows = await loadCityPoints();
+      status.textContent = "";
+    } catch {
+      status.innerHTML =
+        'City and town search is unavailable. <button class="quiet" type="button">Retry</button>';
+      status.querySelector("button").onclick = loadTowns;
+    }
+    if (!input.isConnected || !dialog.open) return;
+    loading = false;
+    run();
+    if (queued === input.value && townRows.length)
+      suggestions.querySelector("button")?.click();
+    queued = null;
+  }
+  if (!townRows.length) void loadTowns();
+  else run();
+  input.oninput = () => {
+    queued = null;
+    run();
   };
-  run();
-  input.oninput = run;
   input.onkeydown = (e) => {
-    if (e.key === "Enter") $("suggest").querySelector("button")?.click();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (loading && !coordinates() && !/^\s*\d+\s*$/.test(input.value))
+        queued = input.value;
+      else suggestions.querySelector("button")?.click();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      suggestions.querySelector("button")?.focus();
+    }
+  };
+  suggestions.onkeydown = (e) => {
+    if (!["ArrowDown", "ArrowUp"].includes(e.key)) return;
+    e.preventDefault();
+    const buttons = [...suggestions.querySelectorAll("button")],
+      index = buttons.indexOf(document.activeElement);
+    if (e.key === "ArrowUp" && index <= 0) input.focus();
+    else
+      buttons[
+        Math.min(buttons.length - 1, index + (e.key === "ArrowDown" ? 1 : -1))
+      ]?.focus();
   };
   input.focus();
 }
@@ -1125,7 +1206,6 @@ function bind() {
       refresh();
     };
 
-  $("reset").onclick = clearFilters;
   $("search").onclick = search;
 
   $("close").onclick = () => dialog.close();

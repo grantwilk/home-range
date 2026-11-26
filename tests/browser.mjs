@@ -1,4 +1,5 @@
 // Run against the release bundle nested under a project path, as on GitHub Pages.
+import { projection } from "../spatial.js";
 import { pickMeasure } from "./catalog-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
@@ -11,8 +12,13 @@ import { once } from "node:events";
 import { cp, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// Check the painted grips as the user sees them. A pair of native input elements
-// can exist even when their drawn handles overlap completely.
+async function pauseActiveFilters(page) {
+  // Every click rebuilds the cards. Re-query the first active switch each time.
+  const active = page.locator('.filter-row .switch[aria-checked="true"]');
+  while (await active.count()) await active.first().click();
+}
+
+// Two native inputs can exist even when their painted grips overlap completely.
 async function checkGrips(card) {
   const track = card.locator(".range-track");
   await track.scrollIntoViewIfNeeded();
@@ -106,6 +112,114 @@ async function checkLowerMapInteraction(page) {
   await checkNationalFit(page);
 }
 
+async function checkPlaceSearchAndToolbar(page, base) {
+  await page.goto(base + "?janLow=15..35&layer=janLow");
+  await page.locator("#areas path").first().waitFor();
+  assert.equal(await page.locator("#reset, #filter-count").count(), 0);
+  const mapToolbar = page.locator(".map-toolbar");
+  const railTitle = page.locator(".railtitle");
+  for (const { width, height } of [
+    { width: 1360, height: 820 },
+    { width: 768, height: 1000 },
+    { width: 320, height: 680 },
+  ]) {
+    await page.setViewportSize({ width, height });
+    const tools = mapToolbar.locator("#search, #share, #export-pdf");
+    assert.equal(await tools.count(), 3);
+    const title = await mapToolbar.locator(".map-scope").boundingBox();
+    const map = await page.locator(".mapcard").boundingBox();
+    let previous = title;
+    for (const id of ["search", "share", "export-pdf"]) {
+      const action = mapToolbar.locator("#" + id);
+      const rect = await action.boundingBox();
+      assert.ok(
+        rect && rect.width >= 24 && rect.height >= 24,
+        `Hit area for ${id} at ${width}px`,
+      );
+      assert.ok(
+        rect.x >= previous.x + previous.width - 1,
+        `Toolbar overlap at ${width}px`,
+      );
+      assert.ok(
+        Math.abs(rect.y + rect.height / 2 - (title.y + title.height / 2)) <= 2,
+        `Toolbar wraps at ${width}px`,
+      );
+      assert.ok(rect.x + rect.width <= map.x + map.width + 1);
+      assert.ok(
+        (await action.getAttribute("aria-label")) ||
+          (await action.innerText()).trim(),
+      );
+      previous = rect;
+    }
+    const heading = await railTitle.locator("#filters-title").boundingBox();
+    const any = await railTitle.locator("#any").boundingBox();
+    const all = await railTitle.locator("#all").boundingBox();
+    const rail = await railTitle.boundingBox();
+    assert.ok(
+      all.x >= heading.x + heading.width && any.x >= all.x + all.width - 1,
+    );
+    assert.ok(
+      Math.abs(heading.y + heading.height / 2 - (any.y + any.height / 2)) <= 2,
+    );
+    const fold = railTitle.locator("#fold");
+    const right = (await fold.isVisible())
+      ? (await fold.boundingBox()).x
+      : rail.x + rail.width;
+    assert.ok(
+      right - (any.x + any.width) >= -1 && right - (any.x + any.width) <= 30,
+      `Match controls must align right at ${width}px`,
+    );
+  }
+  // Distinguish the city of Washington, IA from its same-name county.
+  const input = page.locator("#query");
+  await mapToolbar.locator("#search").click();
+  await input.fill("Washington, IA");
+  const suggest = page.locator("#suggest");
+  await suggest
+    .locator("[data-town]")
+    .filter({ hasText: /Washington, IA/ })
+    .first()
+    .waitFor();
+  const county = suggest
+    .locator("[data-place]")
+    .filter({ hasText: /Washington County/i });
+  await county.click();
+  assert.equal(
+    await page.locator("#dialog-title").innerText(),
+    "Washington County",
+  );
+  await page.locator("#close").click();
+
+  await mapToolbar.locator("#search").click();
+  await input.fill("Madison WI");
+  const town = suggest
+    .locator("[data-town]")
+    .filter({ hasText: /Madison, WI/ });
+  await town.first().waitFor();
+  await input.press("Enter");
+  await page.locator("dialog").waitFor({ state: "hidden" });
+  // The Census representative point is near downtown Madison, Wisconsin.
+  // Reproject it independently and check that the new map view is centered there.
+  const assertCentered = (longitude, latitude) => {
+    const [x, y] = projection([longitude, latitude]);
+    const extent = new URL(page.url()).searchParams.get("extent");
+    assert.ok(extent, "Selecting a place must save the new extent");
+    const [scale, tx, ty] = extent.split(",").map(Number);
+    assert.ok(scale >= 12);
+    assert.ok(
+      Math.abs(tx + scale * x - 480) < 1 && Math.abs(ty + scale * y - 302) < 1,
+    );
+  };
+  assertCentered(-89.429856, 43.087815);
+  assert.equal(new URL(page.url()).searchParams.get("janLow"), "15..35");
+
+  await mapToolbar.locator("#search").click();
+  await input.fill("44.65, -90.14");
+  await input.press("Enter");
+  await page.locator("dialog").waitFor({ state: "hidden" });
+  assertCentered(-90.14, 44.65);
+}
+
 const tmp = await mkdtemp(join(tmpdir(), "home-range-browser-"));
 let server, browser;
 try {
@@ -170,10 +284,13 @@ try {
   assert.equal(await page.locator(".results, #saved-nav, .topbar").count(), 0);
   assert.equal(await page.locator(".filter-row").count(), 1);
   assert.equal(
+    await page.locator(".filter-row .switch").getAttribute("aria-checked"),
+    "false",
+  );
+  assert.equal(
     await page.locator('[data-eye="janLow"]').getAttribute("aria-pressed"),
     "true",
   );
-  assert.equal(await page.locator("#filter-count").innerText(), "0 active");
   for (const [family, key] of [
     ["temperature", "julHigh"],
     ["wetDays", "wetDays"],
@@ -182,7 +299,7 @@ try {
     await page.locator("#add-filter").click();
     await pickMeasure(page, family, key);
   }
-  await page.locator("#reset").click();
+  await pauseActiveFilters(page);
   for (const card of await page.locator(".filter-row").all()) {
     assert.equal(
       await card.locator(".switch").getAttribute("aria-checked"),
@@ -223,7 +340,6 @@ try {
   await expectColoredCount(0);
   await page.locator("#any").click();
   await page.locator('[data-eye="cloud"]').click();
-  assert.equal(await page.locator("#filter-count").innerText(), "2 active");
   await page.locator("#zoomin").click();
   const editedUrl = new URL(page.url());
   assert.equal(editedUrl.searchParams.get("janLow"), "40..42");
@@ -282,9 +398,8 @@ try {
     await page.locator("#legend-name").innerText(),
     "Days at or Above 87°F",
   );
-  await page.locator("#reset").click();
+  await pauseActiveFilters(page);
   await page.locator('[data-key="heatDays"] .switch').click();
-  assert.equal(await page.locator("#filter-count").innerText(), "1 active");
   assert.equal(await row("heatDays").locator(".editor").count(), 1);
   assert.equal(await row("heatDays").locator(".range").count(), 2);
   assert.equal(await row("heatDays").locator(".switch").count(), 1);
@@ -462,7 +577,7 @@ try {
     await page.locator('#areas path[fill="url(#uncertain)"]').count(),
     2,
   );
-  await page.locator("#reset").click();
+  await pauseActiveFilters(page);
   await page.locator("#all").click();
   await page.locator("#add-filter").click();
   await page.locator('[data-pick="population"]').click();
@@ -589,7 +704,7 @@ try {
       await pickMeasure(page, family, key);
     }
   }
-  await page.locator("#reset").click();
+  await pauseActiveFilters(page);
   // All four temperature and both humidity subtypes are present. Exhausted
   // families disappear from the picker until one of their cards is removed.
   await page.locator("#add-filter").click();
@@ -628,7 +743,6 @@ try {
     await checkGrips(card);
     await card.locator(".switch").click();
   }
-  assert.equal(await page.locator("#filter-count").innerText(), "0 active");
   await page.locator('[data-eye="cloud"]').click();
   await setBound("cloud", "min", 21.6);
   assert.equal(
@@ -643,7 +757,7 @@ try {
       .getAttribute("data-uid"),
     "c04013",
   );
-  await page.locator("#reset").click();
+  await pauseActiveFilters(page);
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: width > 400 ? 800 : 670 });
     for (const maximum of [52, 53]) {
@@ -774,6 +888,7 @@ try {
   await checkLocalAccess(page, base);
   await checkNature(page, base);
   await checkPdfExport(page, base, tmp);
+  await checkPlaceSearchAndToolbar(page, base);
   assert.deepEqual(issues, []);
   console.log(
     "Desktop, mobile, independent layer visibility, scrollable rail, shared extent, heat cutoffs, all/any and subpath release checks passed.",
