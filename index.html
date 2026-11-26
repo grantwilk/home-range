@@ -79,7 +79,8 @@
                 <path id="nature-outline"></path>
                 <g id="borders"></g>
                 <g id="statelabels"></g>
-                <g id="access-pins"></g>
+                <g id="reference-towns"></g>
+                <g id="reference-pins"></g>
                 <g id="highlight"></g>
               </g>
             </svg>
@@ -112,6 +113,7 @@
               <div class="colors" id="colors"></div>
               <div id="legend-keys"></div>
             </div>
+            <div id="reference-key" role="group" aria-label="Map Key"></div>
             <div id="credits" class="credits"></div>
           </div>
           <div class="maptools">
@@ -128,9 +130,24 @@
       <aside class="settings" id="settings" aria-labelledby="filters-title">
         <div class="railtitle">
           <h1 id="filters-title">Filters</h1>
-          <button id="share" class="secondary">
-            <i data-icon="share"></i>Share View</button
-          ><button
+          <button
+            id="share"
+            class="secondary"
+            aria-label="Share View"
+            title="Share View"
+          >
+            <i data-icon="share"></i><span>Share View</span>
+          </button>
+          <button
+            id="export-pdf"
+            class="secondary"
+            aria-label="Export PDF"
+            title="Export this map with town labels and a key"
+            disabled
+          >
+            <i data-icon="download"></i><span>Export PDF</span>
+          </button>
+          <button
             id="fold"
             class="iconbtn"
             aria-label="Collapse Filters"

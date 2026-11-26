@@ -90,14 +90,9 @@ async function prepare(f) {
               p[3] <= f.citySize.max,
           )
         : rows;
-    const xy = new Float32Array(points.length * 2);
-    points.forEach((p, i) =>
-      xy.set(projection([p[1], p[2]]) ?? [NaN, NaN], 2 * i),
-    );
     record = {
       token,
       points,
-      xy,
       count: points.length,
       index: new SiteIndex(points),
     };
@@ -187,33 +182,6 @@ function values(g, key, record) {
   g.fields.set(key, { token: record.token, values: data });
   return data;
 }
-function pinsFor(record, frame) {
-  const { x, y, w, h, width, height } = frame,
-    bins = new Set(),
-    pins = [];
-  // At small scales keep one real site per screen bin; zooming reveals nearby sites.
-  for (let i = 0; i < record.points.length; i++) {
-    const px = ((record.xy[2 * i] - x) * width) / w,
-      py = ((record.xy[2 * i + 1] - y) * height) / h;
-    if (!Number.isFinite(px) || px < 0 || py < 0 || px >= width || py >= height)
-      continue;
-    const spacing = frame.spacing;
-    const cell =
-      Math.floor(py / spacing) * Math.ceil(width / spacing) +
-      Math.floor(px / spacing);
-    if (bins.has(cell)) continue;
-    bins.add(cell);
-    pins.push([
-      px,
-      py,
-      record.points[i][0],
-      record.points[i][1],
-      record.points[i][2],
-      record.points[i][3],
-    ]);
-  }
-  return pins;
-}
 async function render(req) {
   const { filters, layer, frame, mode } = req;
   const needed = filters.filter((f) => f.on || f.key === layer);
@@ -247,13 +215,11 @@ async function render(req) {
     classes.crossing,
   ).map(({ key, d }) => ({ ...classes.decode(key), d }));
   const displayed = records[shown];
-  const pins = displayed?.points ? pinsFor(displayed, frame) : [];
   self.postMessage({
     type: "render",
     id: req.id,
     frame,
     contours,
-    pins,
     outline: displayed?.members
       ? displayed.members.map((r) => r.index.outline(frame)).join("")
       : (displayed?.index.outline?.(frame) ?? ""),

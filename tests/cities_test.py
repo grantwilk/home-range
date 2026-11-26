@@ -34,6 +34,11 @@ class CityPoints(unittest.TestCase):
         self.assertNotIn("West Hartford town, CT", self.rows)
         self.assertNotIn("West Hartford CDP, CT", self.rows)
 
+    def test_city_and_borough_names_are_complete(self):
+        for name in ("Juneau", "Sitka", "Wrangell"):
+            self.assertIn(name + ", AK", self.rows)
+            self.assertNotIn(name + " city and, AK", self.rows)
+
     def test_offshore_san_francisco_uses_the_verified_usgs_feature(self):
         self.assertEqual(self.data["gnisReplacements"]["0667000"], "277593")
         self.assertEqual(self.rows["San Francisco, CA"], (-122.4194444, 37.775, 830235))

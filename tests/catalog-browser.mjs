@@ -11,10 +11,10 @@ export async function pickMeasure(page, family, key) {
   assert.equal(added.length, 1, `Adding ${family} should insert one card`);
   if (added[0] !== key) {
     await page
-      .locator(`[data-key="${added[0]}"] [data-subtype]`)
+      .locator(`.filter-row[data-key="${added[0]}"] [data-subtype]`)
       .selectOption(key);
   }
-  await page.locator(`[data-key="${key}"]`).waitFor();
+  await page.locator(`.filter-row[data-key="${key}"]`).waitFor();
   const after = await keys();
   for (const existing of before) assert.ok(after.includes(existing));
 }

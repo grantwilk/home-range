@@ -2,6 +2,7 @@
 import { pickMeasure } from "./catalog-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
+import { checkPdfExport } from "./pdf-browser.mjs";
 import { checkNature } from "./nature-browser.mjs";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
@@ -772,6 +773,7 @@ try {
   await checkHazards(page, base);
   await checkLocalAccess(page, base);
   await checkNature(page, base);
+  await checkPdfExport(page, base, tmp);
   assert.deepEqual(issues, []);
   console.log(
     "Desktop, mobile, independent layer visibility, scrollable rail, shared extent, heat cutoffs, all/any and subpath release checks passed.",

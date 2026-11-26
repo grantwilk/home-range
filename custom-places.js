@@ -1,7 +1,7 @@
 import { projection } from "./spatial.js";
 import { validPoint } from "./facility-model.js";
 
-let citiesPromise;
+import { loadCityPoints } from "./map-reference.js";
 const clean = (s) =>
   s
     .toLowerCase()
@@ -9,21 +9,6 @@ const clean = (s) =>
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "");
 const cache = new Map();
-function localCities() {
-  if (!citiesPromise)
-    citiesPromise = fetch(
-      new URL("./data/facilities/cities.json", import.meta.url),
-    )
-      .then(async (r) => {
-        if (!r.ok) throw Error("City directory unavailable");
-        return (await r.json()).points;
-      })
-      .catch((e) => {
-        citiesPromise = null;
-        throw e;
-      });
-  return citiesPromise;
-}
 function getCoordinates(text) {
   const match = text.match(
     /^\s*([+-]?\d+(?:\.\d+)?)\s*[,;]\s*([+-]?\d+(?:\.\d+)?)\s*$/,
@@ -105,7 +90,7 @@ export function editPlaces(filter, { dialog, showDialog, esc, onSave }) {
       offline = false;
     if (!coordinate) {
       const [towns, remote] = await Promise.allSettled([
-        localCities(),
+        loadCityPoints(),
         geocode(q),
       ]);
       const query = clean(q);

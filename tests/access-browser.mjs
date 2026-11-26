@@ -111,7 +111,7 @@ export async function checkLocalAccess(page, base) {
   }
   await add("cities");
   await ready();
-  const city = page.locator('[data-key="cities"]');
+  const city = page.locator('.filter-row[data-key="cities"]');
   assert.equal(await city.locator("input[type=range]").count(), 4);
   for (const bound of ["min", "max"]) {
     const edit = city.locator(
@@ -169,7 +169,10 @@ export async function checkLocalAccess(page, base) {
     await page.locator("#map canvas, #map foreignObject, #map image").count(),
     0,
   );
-  assert.ok((await page.locator("#access-pins circle").count()) > 0);
+  await page
+    .locator("#reference-pins [data-key=custom] > *")
+    .first()
+    .waitFor({ state: "attached" });
   assert.equal(
     await page.locator("#highlight path").getAttribute("d"),
     await page.locator('[data-uid="c55025"]').getAttribute("d"),
@@ -197,6 +200,9 @@ export async function checkLocalAccess(page, base) {
   async function pixel(lon, lat) {
     const point = await screenPoint(lon, lat);
     const screenshot = await page.screenshot({
+      // Isolate the coverage paint underneath separately tested place markers and labels.
+      style:
+        "#reference-pins, #reference-towns { visibility: hidden !important; }",
       clip: { ...point, width: 1, height: 1 },
       scale: "css",
     });
@@ -388,8 +394,8 @@ export async function checkLocalAccess(page, base) {
     assert.match(warning, /minutes?|travel.time/i);
     assert.match(warning, /paus|off|disabl/i);
     await page.locator("#close").click();
-    const airport = page.locator("[data-key=airports]");
-    const school = page.locator("[data-key=schools]");
+    const airport = page.locator(".filter-row[data-key=airports]");
+    const school = page.locator(".filter-row[data-key=schools]");
     assert.equal(
       await airport.locator(".switch").getAttribute("aria-checked"),
       "false",

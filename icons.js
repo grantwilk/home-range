@@ -10,6 +10,7 @@ const shapes = {
     '<path d="M12 2C10 5.5 5 10.5 5 15a7 7 0 0 0 14 0c0-4.5-5-9.5-7-13Z"/><path d="M8.5 15a3.5 3.5 0 0 0 3.5 3.5"/>',
   eye: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.3"/><path d="m16 16 5 5"/>',
+  download: '<path d="M12 3v12m-4-4 4 4 4-4M4 16v4h16v-4"/>',
   share:
     '<path d="M12 15V3m-4 4 4-4 4 4M5 12v7c0 1 .7 2 2 2h10c1.3 0 2-1 2-2v-7"/>',
   thermo:

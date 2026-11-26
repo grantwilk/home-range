@@ -36,7 +36,15 @@ INPUTS = {
 }
 DATA = Path(__file__).resolve().parents[1] / "data"
 OUTPUT = DATA / "facilities/cities.json"
-SUFFIXES = (" city", " town", " village", " CDP", " borough", " municipality")
+SUFFIXES = (
+    " city and borough",
+    " city",
+    " town",
+    " village",
+    " CDP",
+    " borough",
+    " municipality",
+)
 TOWN_STATES = {"CT", "MA", "ME", "NH", "NY", "RI", "VT", "WI"}
 
 

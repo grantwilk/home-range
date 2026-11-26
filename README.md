@@ -22,6 +22,8 @@ Open **Add Filter** to browse these groups.
 - Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot Days** also lets you set the daily high that counts as a hot day.
 - **County Population** uses smaller slider steps for rural counties and larger steps for major metros. Type whole numbers for precise limits.
 - Use **Find a Place** or press **/** to search by county name, state, or five-digit county code. When a distance layer is visible or active, you can also enter a latitude and longitude. Select **Zoom Here** to inspect that location.
+- Cities and towns are labeled at every scale. Zoom in to see smaller places. The **Map Key** identifies symbols for each enabled point filter, even when the map displays another measure. In dense areas, zoom in to reveal more individual locations.
+- **Export PDF** downloads the current extent as an 11 × 17 inch vector map with searchable town names, a color scale, a symbol key, filter ranges, and data sources. Zoom to the area you want before exporting.
 - **Share View** copies a link that restores the filters, their order and ranges, the visible layer, the match setting, and the map position. You can also bookmark the address. To share with another person, use your published site's address.
 
 ## Share a Filtered Map

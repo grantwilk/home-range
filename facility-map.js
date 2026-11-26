@@ -38,11 +38,9 @@ export class FacilityMap {
     this.overlay = document.getElementById("access-overlay");
     this.shapes = document.getElementById("access-shapes");
     this.clips = document.getElementById("access-clips");
-    this.pinGroup = document.getElementById("access-pins");
     this.natureOutline = document.getElementById("nature-outline");
     this.status = document.getElementById("access-status");
     this.metadata = {};
-    this.pins = [];
     this.active = false;
     new ResizeObserver(() => this.redraw()).observe(this.svg);
   }
@@ -109,7 +107,7 @@ export class FacilityMap {
     this.clips.replaceChildren(clips);
     return this.votes;
   }
-  drawCoverage({ frame, contours, pins, outline }) {
+  drawCoverage({ frame, contours, outline }) {
     const { countyFlags, mode } = this.request;
     const votes = this.countyClips(countyFlags);
     const dx = frame.w / frame.width,
@@ -165,26 +163,14 @@ export class FacilityMap {
       group.append(bands);
       coverage.append(group);
     }
-    const markers = document.createDocumentFragment();
-    for (const p of pins) {
-      markers.append(
-        svgElement("circle", {
-          cx: frame.x + p[0] * dx,
-          cy: frame.y + p[1] * dy,
-          class: "site",
-        }),
-      );
-    }
     this.shapes.replaceChildren(shapes);
     this.overlay.replaceChildren(coverage);
-    this.pinGroup.replaceChildren(markers);
     if (outline !== this.lastOutline) {
       this.natureOutline.setAttribute("d", outline);
       this.lastOutline = outline;
     }
     this.overlay.style.display = "";
     this.status.hidden = true;
-    this.pins = pins;
     this.frame = frame;
     this.stylePatterns(this.viewport.getScreenCTM().a);
   }
@@ -202,11 +188,9 @@ export class FacilityMap {
     if (this.frame) {
       this.overlay.replaceChildren();
       this.shapes.replaceChildren();
-      this.pinGroup.replaceChildren();
       this.clips.replaceChildren();
       this.lastFlags = null;
     }
-    this.pins = [];
     this.frame = null;
   }
   failure(message) {
@@ -279,10 +263,6 @@ export class FacilityMap {
         h,
         width: Math.max(1, Math.ceil(w * density)),
         height: Math.max(1, Math.ceil(h * density)),
-        spacing: Math.max(
-          5,
-          Math.round(((w >= 450 ? 15 : 8) * density) / matrix.a),
-        ),
       };
       this.worker.postMessage({ type: "render", id, frame, ...this.request });
     }, 50);
@@ -292,25 +272,7 @@ export class FacilityMap {
       this.viewport.getScreenCTM().inverse(),
     );
     const loc = projection.invert([pos.x, pos.y]);
-    let pin = null;
-    if (this.frame && this.pins.length) {
-      const f = this.frame,
-        x = ((pos.x - f.x) * f.width) / f.w,
-        y = ((pos.y - f.y) * f.height) / f.h;
-      const sx = (f.w / f.width) * this.viewport.getScreenCTM().a,
-        sy = (f.h / f.height) * this.viewport.getScreenCTM().d;
-      let best = 6 ** 2;
-      for (const p of this.pins) {
-        const d = ((p[0] - x) * sx) ** 2 + ((p[1] - y) * sy) ** 2;
-        if (d < best) {
-          best = d;
-          pin = p;
-        }
-      }
-    }
-    return pin
-      ? { name: pin[2], lon: pin[3], lat: pin[4], population: pin[5] }
-      : { lon: loc[0], lat: loc[1] };
+    return { lon: loc[0], lat: loc[1] };
   }
   inspect(lon, lat) {
     if (

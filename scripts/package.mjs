@@ -47,8 +47,12 @@ try {
   // Include the worker's content-specific URL in the app so a worker-only
   // change also gets a new app URL. Both resolve beside the site's data folder.
   const worker = await bundle("access-worker.js");
+  const pdf = await bundle("map-pdf.js", { loader: { ".svg": "text" } });
   const app = await bundle("app.js", {
-    define: { "import.meta.accessWorker": JSON.stringify(worker) },
+    define: {
+      "import.meta.accessWorker": JSON.stringify(worker),
+      "import.meta.mapPdf": JSON.stringify(pdf),
+    },
   });
   const css = await bundle("styles.css", { external: ["./assets/*"] });
   const html = (await readFile(join(root, "index.html"), "utf8"))

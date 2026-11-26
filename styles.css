@@ -1,3 +1,4 @@
+@import "./reference-map.css";
 @font-face {
   font-family: "DM Sans";
   src: url("./assets/fonts/sans.woff2") format("woff2");
@@ -137,7 +138,6 @@ kbd {
 }
 #basemap,
 #access-overlay,
-#access-pins,
 #borders,
 #statelabels,
 #highlight {
@@ -147,8 +147,7 @@ kbd {
 #state-borders,
 .selected-outline,
 #basemap path,
-.state-name,
-#access-pins circle {
+.state-name {
   vector-effect: non-scaling-stroke;
 }
 #county-borders,
@@ -196,12 +195,6 @@ kbd {
 .selected-outline {
   stroke: #233f32;
   stroke-width: 2px;
-}
-#access-pins circle {
-  r: var(--pin-radius);
-  fill: #253d57;
-  stroke: #fffdf5;
-  stroke-width: 0.85px;
 }
 .state-name {
   fill: #284233;
@@ -866,6 +859,7 @@ dialog::backdrop {
   color: inherit;
 }
 .settings {
+  container: filter-panel / inline-size;
   min-height: 0;
   min-width: 0;
   background: #fff;
@@ -891,9 +885,25 @@ h1 {
 }
 #share {
   margin-left: auto;
+}
+#share,
+#export-pdf {
+  white-space: nowrap;
   font-size: 13px;
   gap: 6px;
   padding: 7px 9px;
+}
+@container filter-panel (max-width: 340px) {
+  #share span {
+    display: none;
+  }
+  #share {
+    width: 35px;
+    padding-inline: 0;
+  }
+  .railtitle {
+    padding-inline: 10px;
+  }
 }
 #fold {
   display: none;
@@ -1040,6 +1050,7 @@ h1 {
   }
   .railtitle {
     padding: 6px 12px;
+    gap: 5px;
   }
   .railtitle h1 {
     font-size: 22px;
@@ -1274,14 +1285,6 @@ h1 {
 }
 #access-status[data-state="error"] {
   color: #7c4529;
-}
-.site-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #253d57;
-  border: 1px solid #fff;
-  box-shadow: 0 0 0 1px #6c807b;
 }
 #nature-outline {
   pointer-events: none;

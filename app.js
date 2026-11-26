@@ -1,5 +1,6 @@
 import { combine, projection } from "./spatial.js";
 import { FacilityMap } from "./facility-map.js";
+import { ReferenceMap } from "./map-reference.js";
 import { citySize } from "./facility-model.js";
 import {
   catalogMatches,
@@ -136,6 +137,7 @@ function restoreAddress() {
 }
 const notApplicableLayers = new Set();
 let access;
+let referenceMap;
 const filters = () => state.county;
 const metric = () => layers[state.layer];
 const cityMetric = {
@@ -664,9 +666,7 @@ function paintLegend() {
   $("legend-keys").innerHTML =
     (m.nature
       ? `<span><b class="nature-line"></b>${esc(m.nature)}</span>`
-      : m.facility
-        ? '<span><b class="site-dot"></b>Locations · zoom for detail</span>'
-        : "") +
+      : "") +
     (notApplicableLayers.has(state.layer)
       ? '<span><b class="swatch inapplicable"></b>Not applicable</span>'
       : "") +
@@ -709,6 +709,7 @@ function refresh(continuous = false) {
     fill(p.el, c);
   }
   access?.update(local, state.layer, state.mode, votes);
+  referenceMap?.update(local);
   $("grain").textContent = hasAccess ? "U.S. Proximity Map" : "U.S. County Map";
   $("filter-count").textContent = active.length + " active";
   $("reset").disabled = !active.length;
@@ -1038,6 +1039,7 @@ async function pointDetails(county, point) {
 // Convert screen-sized map symbols to projection units after zoom or resize.
 let symbolScale, symbolZoom;
 function styleMapScale() {
+  referenceMap?.redraw();
   const scale = $("viewport").getScreenCTM()?.a;
   if (!scale || (scale === symbolScale && zoom === symbolZoom)) return;
   symbolScale = scale;
@@ -1052,7 +1054,6 @@ function styleMapScale() {
     "--ocean-size",
     Math.min(17, Math.max(7, baseScale * 15)) / scale + "px",
   );
-  svg.style.setProperty("--pin-radius", (zoom > 3 ? 3 : 2) / scale + "px");
   svg.classList.toggle("local-view", zoom >= 12);
   for (const id of ["uncertain", "missing"])
     $(id).setAttribute("patternTransform", "scale(" + 1 / scale + ")");
@@ -1141,6 +1142,37 @@ function bind() {
     }
   });
 
+  const exportButton = $("export-pdf");
+  exportButton.disabled = false;
+  exportButton.onclick = async () => {
+    exportButton.disabled = true;
+    exportButton.setAttribute("aria-busy", "true");
+    exportButton.querySelector("span").textContent = "Exporting…";
+    try {
+      const { downloadMap } = await import(
+        new URL(import.meta.mapPdf ?? "./map-pdf.js", import.meta.url).href
+      );
+      await downloadMap({
+        getState: () => state,
+        getSelected: () => byID.get(selected),
+        referenceMap,
+        access,
+      });
+      notify("Map PDF downloaded");
+    } catch (error) {
+      console.error("Map PDF export failed", error);
+      showDialog(
+        "Map Couldn’t Be Exported",
+        "<p>" +
+          esc(error.message) +
+          "</p><p>Close this message and select Export PDF to try again.</p>",
+      );
+    } finally {
+      exportButton.disabled = false;
+      exportButton.removeAttribute("aria-busy");
+      exportButton.querySelector("span").textContent = "Export PDF";
+    }
+  };
   $("share").onclick = async () => {
     syncAddress();
     const href = shareUrl();
@@ -1201,7 +1233,7 @@ function bind() {
     }
     if (e.pointerType === "touch") return;
     const p = byID.get(e.target.dataset.uid);
-    const pin = access?.active ? access.point(e).name : null;
+    const pin = referenceMap?.point(e)?.name;
     if (!p && !pin) {
       $("hover").hidden = true;
       return;
@@ -1246,7 +1278,7 @@ function bind() {
     }
     const p = byID.get(e.target.dataset.uid);
     if (access?.active) {
-      const point = access.point(e);
+      const point = referenceMap?.point(e) ?? access.point(e);
       if (p || point.name) {
         $("hover").hidden = true;
         pointDetails(p, point);
@@ -1385,6 +1417,7 @@ async function init() {
   }).observe(controls);
 
   access = new FacilityMap(places, paintLegend);
+  referenceMap = new ReferenceMap();
   bind();
   bindFilters();
   window.addEventListener("popstate", restoreAddress);

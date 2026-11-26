@@ -14,7 +14,7 @@ export async function checkNature(page, base) {
       { timeout: 90000 },
     );
   await ready();
-  assert.equal(await page.locator("#access-pins circle").count(), 0);
+  assert.equal(await page.locator("#reference-pins [data-key] > *").count(), 0);
   assert.equal(
     await page.locator('[data-key="lakes"] [type=range]').count(),
     2,
