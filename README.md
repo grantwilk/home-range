@@ -108,6 +108,12 @@ Install Node.js 22.13+ and Python 3. From the project directory, run `npm ci`, t
 
 For a static build, run `npm run build`. The contents of `dist/` can be served at a domain root or a project subpath.
 
+## Publish to GitHub Pages
+
+The Pages workflow builds the site on GitHub and deploys the contents of `dist/`. Changes merged to `main` publish automatically. A version tag such as `v1.0.0` can publish a specific revision. Pull requests build and check the site before review. [Publishing Workflow](.github/workflows/pages.yml)
+
+The project site inherits the custom domain of the account’s main website and lives at `/home-range/`. [Production Map](https://grantwilk.com/home-range/) · [GitHub Pages Custom Domains](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/about-custom-domains-and-github-pages)
+
 ## Add a Layer
 
 1. Establish the geographic unit, identifier, source, period, units, precision, missing-value rule, and the meaning of a match. County attributes use FIPS. A distance layer uses named coordinates and the shared straight-line distance calculation.
