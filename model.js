@@ -243,9 +243,7 @@ export const defaults = () => ({
   layer: "janLow",
   cutoff: 90,
   mode: "all",
-  county: ["janLow", "julHigh", "wetDays", "cloud"].map((key) =>
-    freshFilter(key),
-  ),
+  county: [freshFilter("janLow")],
 });
 const validCutoff = (x) => Number.isInteger(x) && x >= 60 && x <= 110;
 

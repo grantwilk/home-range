@@ -6,7 +6,7 @@ Home Range helps you find places to live in the United States. Choose the climat
 
 ## Try It
 
-Try setting **Average January Low** to **40–75°F** and **Average July High** to **40–80°F**. **Match All** finds six counties that satisfy both ranges. **Match Any** finds 486 that satisfy either one. View **Daytime Cloud Cover** to see how often satellites observed clouds over those counties. Select a county to inspect its monthly temperatures and see which ranges it meets.
+The map opens with one filter, **Average January Low**. It shows temperatures across the country until you narrow the range. Try setting it to **40–75°F**, then use **Add Filter → Temperature** to add **Average July High** and set it to **40–80°F**. **Match All** finds six counties that satisfy both ranges. **Match Any** finds 486 that satisfy either one.
 
 Open **Add Filter** to browse these groups.
 
@@ -33,7 +33,7 @@ To edit a link by hand, use the filter key followed by an inclusive `minimum..ma
 - `airports=0..30` selects locations within 30 straight-line miles of a qualifying commercial airport.
 - `cities=0..10&cities.population=150000..3000000` selects places within ten miles of a city in that population range.
 - `heatDays=0..30&heatDays.cutoff=95&mapCutoff=90` filters on days reaching 95°F and displays days reaching 90°F when the heat layer is viewed.
-- `filters=none` opens an empty filter panel. Opening the site without view parameters shows the default cards.
+- `filters=none` opens an empty filter panel. Shared links restore the cards included in the link.
 
 **Custom Places** travel with the link, including each saved name and its coordinates. The browser stores these after the `#` so the hosting server receives only the filter settings. Anyone you give the full link to can see the saved places.
 

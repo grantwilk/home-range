@@ -167,7 +167,21 @@ try {
   const historySize = await page.evaluate(() => history.length);
   await checkLowerMapInteraction(page);
   assert.equal(await page.locator(".results, #saved-nav, .topbar").count(), 0);
-  assert.equal(await page.locator(".eye").count(), 4);
+  assert.equal(await page.locator(".filter-row").count(), 1);
+  assert.equal(
+    await page.locator('[data-eye="janLow"]').getAttribute("aria-pressed"),
+    "true",
+  );
+  assert.equal(await page.locator("#filter-count").innerText(), "0 active");
+  for (const [family, key] of [
+    ["temperature", "julHigh"],
+    ["wetDays", "wetDays"],
+    ["cloud", "cloud"],
+  ]) {
+    await page.locator("#add-filter").click();
+    await pickMeasure(page, family, key);
+  }
+  await page.locator("#reset").click();
   for (const card of await page.locator(".filter-row").all()) {
     assert.equal(
       await card.locator(".switch").getAttribute("aria-checked"),
