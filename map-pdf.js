@@ -24,20 +24,33 @@ async function printFont() {
   return fontBytes;
 }
 
-function mapDetails(state, access) {
+function mapDetails(state, access, solid) {
   const active = state.county.filter((f) => f.on);
-  const bins = state.layer
-    ? [...byId("colors").children].map((el, i) => ({
-        color: layers[state.layer].colors[i],
-        label: el.textContent,
-      }))
-    : [];
-  const keys = state.layer
-    ? [...byId("legend-keys").children].map((el) => ({
-        kind: el.firstElementChild.className,
-        label: el.textContent,
-      }))
-    : [];
+  const bins =
+    !solid && state.layer
+      ? [...byId("colors").children].map((el, i) => ({
+          color: layers[state.layer].colors[i],
+          label: el.textContent,
+        }))
+      : [];
+  const keys =
+    !solid && state.layer
+      ? [...byId("legend-keys").children].map((el) => ({
+          kind: el.firstElementChild.className,
+          label: el.textContent,
+        }))
+      : [];
+  if (solid) {
+    keys.push({
+      kind: "match",
+      label: active.length ? "Matches filters" : "County land",
+    });
+    if (active.length)
+      keys.push(
+        { kind: "outside", label: "Outside filters" },
+        { kind: "swatch uncertain", label: "Uncertain match" },
+      );
+  }
   for (const el of byId("reference-key").querySelectorAll("[data-key]")) {
     const symbol = el.querySelector("svg");
     if (symbol)
@@ -62,9 +75,14 @@ function mapDetails(state, access) {
   sources.add("County boundaries: U.S. Census Bureau (2017)");
   sources.add("Town locations: U.S. Census Bureau (2024), USGS GNIS");
   return {
-    title: byId("legend-name").textContent,
-    sub: byId("legend-sub").textContent,
-    unit: byId("legend-unit").textContent,
+    title: solid
+      ? active.length
+        ? "Filter Matches"
+        : "County Map"
+      : byId("legend-name").textContent,
+    sub: solid ? "" : byId("legend-sub").textContent,
+    unit: solid ? "" : byId("legend-unit").textContent,
+    solid,
     bins,
     keys,
     sources: [...sources].join("  ·  "),
@@ -125,7 +143,9 @@ function drawKeySymbol(doc, key, x, y) {
       ? "#deddd1"
       : key.kind.includes("inapplicable")
         ? "#b5cdd9"
-        : "#d8ded4";
+        : key.kind === "match"
+          ? "#7ca38a"
+          : "#d8ded4";
   doc
     .save()
     .rect(x, y + 2, 13, 9)
@@ -167,7 +187,14 @@ function drawMap(doc, b, towns, frame) {
   const local = (p) => ({ x: (p.x - b.x) * scale, y: (p.y - b.y) * scale });
   doc.save().rect(x, y, size.width, size.height).fill("#edf2ea");
   doc.rect(x, y, size.width, size.height).clip();
-  drawSvg(doc, snap.svg, x, y, size.width, size.height);
+  doc.save().translate(x, y).scale(scale).translate(-b.x, -b.y);
+  for (const pass of snap.passes) {
+    doc.save();
+    if (pass.clip) doc.path(pass.clip).clip();
+    drawSvg(doc, pass.svg, b.x, b.y, b.width, b.height);
+    doc.restore();
+  }
+  doc.restore();
   const symbols = snap.pinCenters.map((p) => {
     const dot = local(p);
     return { x: dot.x - 4.6, y: dot.y - 4.6, width: 9.2, height: 9.2 };
@@ -342,7 +369,15 @@ async function makePdf(bounds, details, towns, font) {
       doc.rect(margin + i * step, row, step + 0.05, 7).fill(bin.color);
       words(doc, bin.label, margin + i * step, row + 10, 8.5, quiet);
     }
-  } else words(doc, details.title, margin, row, 10, quiet);
+  } else
+    words(
+      doc,
+      details.solid ? "Solid Color" : details.title,
+      margin,
+      row,
+      10,
+      quiet,
+    );
   for (const { key, x, y } of keyItems) {
     drawKeySymbol(doc, key, keyX + x, row + y);
     words(doc, key.label, keyX + x + 17, row + y + 1, 9);
@@ -403,19 +438,21 @@ async function waitForLayers(referenceMap, access) {
   );
 }
 
-export async function downloadMap({
+export async function createMapPdf({
   getState,
   getSelected,
   referenceMap,
   access,
+  solid = false,
+  bounds,
 }) {
   const font = await printFont();
   await waitForLayers(referenceMap, access);
   // Snapshot extent, legend and points together before yielding back to the map.
-  const bounds = mapBounds(),
-    details = mapDetails(getState(), access);
+  bounds ??= mapBounds();
+  const details = mapDetails(getState(), access, solid);
   details.national = !byId("map").classList.contains("zoomed");
-  const selected = getSelected();
+  const selected = getSelected?.();
   if (selected) {
     const r = selected.el.getBBox();
     if (
@@ -426,20 +463,13 @@ export async function downloadMap({
     )
       details.selection = selected.name + ", " + selected.state;
   }
-  const file = await makePdf(bounds, details, referenceMap.cityPoints, font);
-  const url = URL.createObjectURL(file);
-  const save = Object.assign(document.createElement("a"), {
-    href: url,
-    download:
-      "home-range-" +
-      details.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/-$/, "") +
-      ".pdf",
-  });
-  document.body.append(save);
-  save.click();
-  save.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  const blob = await makePdf(bounds, details, referenceMap.cityPoints, font);
+  const filename =
+    "home-range-" +
+    details.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/-$/, "") +
+    ".pdf";
+  return { blob, filename };
 }

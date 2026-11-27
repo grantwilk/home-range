@@ -678,8 +678,10 @@ try {
   await page.locator('[data-view="heatDays"]').click();
   assert.deepEqual(await page.locator("#map").boundingBox(), mapRect);
   assert.equal(await page.evaluate(() => window.scrollY), 0);
-  await page.locator("#display-cutoff").fill("87");
-  await page.locator("#display-cutoff").press("Enter");
+  const filterCutoff = row("heatDays").locator(".editor .cutoff");
+  assert.equal(await row("heatDays").locator(".cutoff").count(), 1);
+  await filterCutoff.fill("87");
+  await filterCutoff.press("Enter");
   assert.equal(
     await page.locator("#legend-name").innerText(),
     "Days at or Above 87°F",
@@ -689,10 +691,14 @@ try {
   assert.equal(await row("heatDays").locator(".editor").count(), 1);
   assert.equal(await row("heatDays").locator(".range").count(), 2);
   assert.equal(await row("heatDays").locator(".switch").count(), 1);
-  const filterCutoff = row("heatDays").locator(".editor .cutoff");
   await filterCutoff.fill("95");
   await filterCutoff.press("Enter");
-  assert.equal(await page.locator("#display-cutoff").inputValue(), "87");
+  await page.waitForFunction(
+    () =>
+      document.getElementById("legend-name").textContent ===
+      "Days at or Above 95°F",
+  );
+  assert.equal(new URL(page.url()).searchParams.has("mapCutoff"), false);
   await page.locator('[data-eye="cloudyDays"]').click();
   assert.match(
     await page.locator("#credits").innerText(),

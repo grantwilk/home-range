@@ -8,7 +8,7 @@ import {
   newCard,
   changeSubtype,
 } from "../filter-catalog.js";
-import { layers } from "../model.js";
+import { filterId, layers, maxFilters } from "../model.js";
 import { writeViewUrl } from "../view-url.js";
 
 test("the picker covers each current measure and older seasonal shares keep their names", () => {
@@ -16,6 +16,10 @@ test("the picker covers each current measure and older seasonal shares keep thei
   assert.equal(entries.length, 13);
   assert.equal(
     canAddFilter(new Set(entries.flatMap((entry) => entry.keys))),
+    true,
+  );
+  assert.equal(
+    canAddFilter(new Set(Array.from({ length: maxFilters }, (_, i) => i))),
     false,
   );
   for (const key of ["coldLow", "hotHigh"])
@@ -28,7 +32,7 @@ test("the picker covers each current measure and older seasonal shares keep thei
   );
 });
 
-test("a subtype search selects an available match and never offers a duplicate", () => {
+test("a subtype search selects available measures, including configurable copies", () => {
   for (const [term, group, key] of [
     ["freezing", "temperatureDays", "coldDays"],
     ["hot days", "temperatureDays", "heatDays"],
@@ -47,7 +51,31 @@ test("a subtype search selects an available match and never offers a duplicate",
     const [first] = catalogMatches(new Set(), term).flatMap((g) => g.entries);
     assert.equal(first.entry.id, group);
     assert.equal(first.key, key);
-    assert.deepEqual(catalogMatches(new Set([key]), term), []);
+    const again = catalogMatches(new Set([key]), term).flatMap(
+      (g) => g.entries,
+    );
+    if (["heatDays", "coldDays"].includes(key)) assert.equal(again[0].key, key);
+    else assert.deepEqual(again, []);
+  }
+});
+
+test("configurable cards retain separate identities when switching measures and removing siblings", () => {
+  for (const [key, alternate] of [
+    ["coldDays", "heatDays"],
+    ["custom", "cities"],
+  ]) {
+    const first = newCard(key);
+    const second = newCard(key, [first]);
+    assert.equal(filterId(first), key);
+    assert.equal(filterId(second), key + "~2");
+    const another = newCard(alternate);
+    const switched = changeSubtype(second, alternate, [first, second, another]);
+    assert.equal(filterId(switched), alternate + "~2");
+    const reclaimed = newCard(key, [first]);
+    assert.equal(filterId(reclaimed), key + "~2");
+    const restored = changeSubtype(switched, key, [first, reclaimed, switched]);
+    assert.equal(filterId(restored), key + "~3");
+    assert.equal(filterId(newCard(key, [restored])), key);
   }
 });
 

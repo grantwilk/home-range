@@ -294,13 +294,44 @@ export const poles = {
   hotHumidity: ["Less humid", "More humid"],
   wetDays: ["Drier", "Wetter"],
 };
+// These measures take a second input that changes what is being measured.
+export const repeatableMeasures = new Set([
+  "heatDays",
+  "coldDays",
+  "cities",
+  "custom",
+]);
+export const maxFilters = 256;
+export const filterId = (filter) => filter.id ?? filter.key;
+export const viewedId = (state) => state.layerId ?? state.layer;
+export function measureKey(id) {
+  if (typeof id !== "string") return undefined;
+  if (Object.hasOwn(layers, id)) return id;
+  const parts = /^([A-Za-z]+)~([1-9]\d*)$/.exec(id);
+  if (
+    parts &&
+    repeatableMeasures.has(parts[1]) &&
+    Number(parts[2]) >= 2 &&
+    Number(parts[2]) <= maxFilters
+  )
+    return parts[1];
+}
+export function setViewedFilter(state, filter) {
+  state.layer = filter?.key ?? null;
+  if (filter?.id) state.layerId = filter.id;
+  else delete state.layerId;
+}
 export function cutoffFor(state, key) {
-  if (key === "coldDays")
+  const threshold = layers[key]?.threshold;
+  if (threshold) {
+    const selected =
+      state.layer === key &&
+      state.county.find((f) => filterId(f) === viewedId(state));
     return (
-      state.county.find((f) => f.key === key)?.cutoff ??
-      layers.coldDays.threshold.initial
+      (selected || state.county.find((f) => f.key === key))?.cutoff ??
+      threshold.initial
     );
-  return state.cutoff;
+  }
 }
 export function value(place, key, cutoff = layers[key]?.threshold?.initial) {
   const readings = place.values;
@@ -359,7 +390,6 @@ export const freshFilter = (key, on = false) => ({
 });
 export const defaults = () => ({
   layer: "janLow",
-  cutoff: 90,
   mode: "all",
   county: [freshFilter("janLow")],
 });
@@ -473,14 +503,11 @@ const replacements = new Map([
   ["cloud", "cloudyDays"],
   ["population", "populationDensity"],
 ]);
-const linkedFilterLimit = Math.max(
-  48,
-  Object.keys(layers).length + replacements.size,
-);
 export const retiredMeasure = (key) => replacements.has(key);
 function linkedLayer(raw) {
+  if (raw.layerId && measureKey(raw.layerId) === raw.layer) return raw.layerId;
   return typeof raw.layer === "string" &&
-    (retiredMeasure(raw.layer) || Object.hasOwn(layers, raw.layer))
+    (retiredMeasure(raw.layer) || measureKey(raw.layer))
     ? raw.layer
     : raw.views?.county;
 }
@@ -489,9 +516,7 @@ export function usesRetiredMeasure(raw) {
     raw &&
     (retiredMeasure(linkedLayer(raw)) ||
       (Array.isArray(raw.county) &&
-        raw.county
-          .slice(0, linkedFilterLimit)
-          .some((f) => retiredMeasure(f?.key)))),
+        raw.county.slice(0, maxFilters).some((f) => retiredMeasure(f?.key)))),
   );
 }
 
@@ -500,18 +525,16 @@ export function parseView(raw, warn = () => {}) {
   if (!raw || typeof raw !== "object") return state;
   const warnings = new Set();
   state.mode = (raw.mode ?? raw.modes?.county) === "any" ? "any" : "all";
-  if (validCutoff(raw.cutoff, layers.heatDays.threshold))
-    state.cutoff = raw.cutoff;
   const migrated = new Set();
   const linked = Array.isArray(raw.county)
-    ? raw.county.slice(0, linkedFilterLimit)
+    ? raw.county.slice(0, maxFilters)
     : [];
   const linkedKeys = new Set(linked.map((f) => f?.key));
   if (Array.isArray(raw.county)) {
     const grouped = new Map();
-    if (raw.county.length > linkedFilterLimit)
+    if (raw.county.length > maxFilters)
       warnings.add(
-        `Only the first ${linkedFilterLimit} linked filters were restored.`,
+        `Only the first ${maxFilters} linked filters were restored.`,
       );
     for (const input of linked) {
       if (retiredMeasure(input?.key)) {
@@ -529,8 +552,19 @@ export function parseView(raw, warn = () => {}) {
         warnings.add("An unrecognized layer was omitted from the linked view.");
         continue;
       }
-      if (!grouped.has(input.key)) grouped.set(input.key, []);
-      grouped.get(input.key).push(readRange(input, warnings));
+      const range = readRange(input, warnings);
+      if (input.id !== undefined && input.id !== input.key) {
+        if (measureKey(input.id) !== input.key) {
+          warnings.add(
+            "A filter with an invalid copy number was omitted from the linked view.",
+          );
+          continue;
+        }
+        range.id = input.id;
+      }
+      const id = filterId(range);
+      if (!grouped.has(id)) grouped.set(id, []);
+      grouped.get(id).push(range);
     }
     state.county = [...grouped.values()].map((ranges) =>
       mergeRanges(ranges, state.mode, warnings),
@@ -558,9 +592,10 @@ export function parseView(raw, warn = () => {}) {
         ? "This link included a county population total. Its saved population density range and switch setting have been kept."
         : "This link used total residents. Population density measures people per square mile of land. Its filter is paused so you can choose a new range.",
     );
-  state.layer = state.county.some((f) => f.key === desired)
-    ? desired
-    : (state.county[0]?.key ?? null);
+  setViewedFilter(
+    state,
+    state.county.find((f) => filterId(f) === desired) ?? state.county[0],
+  );
   if (warnings.size) warn([...warnings].join(" "));
   return state;
 }

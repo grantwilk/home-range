@@ -1,3 +1,4 @@
+import { filterId } from "./model.js";
 import {
   SiteIndex,
   projection,
@@ -78,7 +79,7 @@ async function prepare(f) {
   }
   if (facilityLayers[f.key].nature) return source(f.key);
   const token = JSON.stringify([f.key, f.citySize, f.points]);
-  let record = indices.get(f.key);
+  let record = indices.get(filterId(f));
   if (record?.token !== token) {
     const rows = f.key === "custom" ? f.points : await source(f.key);
     const points =
@@ -96,7 +97,7 @@ async function prepare(f) {
       count: points.length,
       index: new SiteIndex(points),
     };
-    indices.set(f.key, record);
+    indices.set(filterId(f), record);
   }
   return record;
 }
@@ -184,24 +185,28 @@ function values(g, key, record) {
 }
 async function render(req) {
   const { filters, layer, frame, mode } = req;
-  const needed = filters.filter((f) => f.on || f.key === layer);
+  const needed = filters.filter((f) => f.on || filterId(f) === layer);
   const keep = new Set(
     needed.flatMap((f) => facilityLayers[f.key].members ?? [f.key]),
   );
   for (const key of sources.keys()) {
     if (facilityLayers[key].nature && !keep.has(key)) sources.delete(key);
   }
+  const activeIds = new Set(needed.map(filterId));
+  for (const id of indices.keys()) if (!activeIds.has(id)) indices.delete(id);
   const records = await Promise.all(needed.map(prepare));
   if (req.id !== generation) return;
   const g = sampleGrid(frame),
-    fields = needed.map((f, i) => values(g, f.key, records[i]));
-  const shown = needed.findIndex((f) => f.key === layer);
+    fields = needed.map((f, i) => values(g, filterId(f), records[i]));
+  for (const id of g.fields.keys())
+    if (!activeIds.has(id) && !keep.has(id)) g.fields.delete(id);
+  const shown = needed.findIndex((f) => filterId(f) === layer);
   const classes = classifyAccess(
     needed,
     fields,
     records.map((r) => r.count > 0),
     shown,
-    facilityLayers[layer]?.bins ?? [],
+    facilityLayers[needed[shown]?.key]?.bins ?? [],
     mode,
   );
   const labels = new Int16Array(g.mask.length).fill(-1);
@@ -276,7 +281,7 @@ self.onmessage = async ({ data }) => {
           const candidates = (record.members ?? [record]).map((rec) => {
             const n = rec.index.nearest(...unitVector(lon, lat), lon, lat);
             return {
-              key: f.key,
+              id: filterId(f),
               name: rec.points ? rec.points[n.id]?.[0] : rec.index.names[n.id],
               miles: n.miles,
             };

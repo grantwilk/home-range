@@ -109,6 +109,38 @@ export async function checkLocalAccess(page, base) {
     }
     await page.locator('[data-drop="' + key + '"]').click();
   }
+  // Each place list contributes one distance vote even when the symbol is shared.
+  const lists = new URL(base);
+  lists.search =
+    "custom=0..10&custom~2=0..10&cities=0..100&cities.population=200000..500000&cities~2=0..100&cities~2.population=2711226..2711226&layer=custom~2&match=all";
+  lists.hash = new URLSearchParams({
+    place: JSON.stringify(["Home in Madison", -89.4012, 43.0731]),
+    "place~2": JSON.stringify(["Family in Chicago", -87.684939, 41.837045]),
+  });
+  await page.goto(lists.href);
+  await ready();
+  assert.equal(
+    await page.locator('#reference-key [data-key="custom"]').count(),
+    1,
+  );
+  assert.equal(
+    await page.locator('#reference-key [data-key="cities"]').count(),
+    1,
+  );
+  const listsAtMadison = await readPoint("43.0731, -89.4012");
+  assert.match(listsAtMadison, /Outside Your Filters/);
+  for (const source of [
+    "Home in Madison",
+    "Family in Chicago",
+    "Chicago, IL",
+    "Madison, WI",
+  ])
+    assert.ok(listsAtMadison.includes(source), source);
+  await page.locator("#any").click();
+  await ready();
+  assert.match(await readPoint("43.0731, -89.4012"), /Matches Your Filters/);
+  await page.goto(base);
+  await page.locator("#areas path").first().waitFor();
   await add("cities");
   await ready();
   const city = page.locator('.filter-row[data-key="cities"]');

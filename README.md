@@ -19,11 +19,11 @@ Open **Add Filter** to browse these groups.
 
 - Choose **Temperature**, **Relative Humidity**, **Annual Precipitation**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
 - Click the eye or layer name to color the map. Its switch applies or pauses the filter. Use **×** to remove the card.
-- Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot & Cold Days** lets you choose a daily high threshold for hot days or a daily low threshold for cold days. Add the card twice to use both.
+- Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot & Cold Days** lets you choose a daily high threshold for hot days or a daily low threshold for cold days. Add a card for each threshold you care about. For example, combine [up to 14 days below 0°F and up to 30 days below 10°F](https://grantwilk.com/home-range/?coldDays=0..14&coldDays.cutoff=0&coldDays~2=0..30&coldDays~2.cutoff=10&layer=coldDays~2&match=all) using **Match All**. City distance cards can also use different population ranges, and each custom distance card can use its own list of places.
 - **County Population Density** filters on residents per square mile of land. The slider has finer steps for rural counties, and you can enter limits to two decimal places. County details also show the total number of residents.
 - Use **Find a Place** or press **/** to search for a city, town, or county by name. Add a state to narrow the results, or enter a five-digit county code. Choosing a city or town zooms directly to it. You can also enter latitude and longitude. With a distance layer active or visible, the result opens nearby-place details.
 - Cities and towns are labeled at every scale. Zoom in to see smaller places. The **Map Key** identifies symbols for each enabled point filter, even when the map displays another measure. In dense areas, zoom in to reveal more individual locations.
-- **Export PDF** downloads the current extent as an 11 × 17 inch vector map with searchable town names, a color scale, a symbol key, filter ranges, and data sources. Zoom to the area you want before exporting.
+- **Export PDF** exports the current view or the whole country as an 11 × 17 inch vector map. Choose a coloring layer or a solid fill, and select symbols from enabled place filters. The PDF includes searchable city and town labels, a key, active filter ranges, and data sources.
 - **Share View** copies a link that restores the filters, their order and ranges, the visible layer, the match setting, and the map position. You can also bookmark the address. To share with another person, use your published site's address.
 
 ## Share a Filtered Map
@@ -34,7 +34,7 @@ To edit a link by hand, use the filter key followed by an inclusive `minimum..ma
 
 - `airports=0..30` selects locations within 30 straight-line miles of a qualifying commercial airport.
 - `cities=0..10&cities.population=150000..3000000` selects places within ten miles of a city in that population range.
-- `heatDays=0..30&heatDays.cutoff=95&mapCutoff=90` filters on days reaching 95°F and displays days reaching 90°F when the heat layer is viewed.
+- `heatDays=0..30&heatDays.cutoff=95` selects counties averaging up to 30 days per year with highs at or above 95°F. Each Hot Days or Cold Days card uses its own threshold for filtering, map colors, and PDF export.
 - [Cold days below −30°F, 0–14 days per year](https://grantwilk.com/home-range/?coldDays=0..14&coldDays.cutoff=-30&layer=coldDays) uses the average annual number of days when the countywide daily low fell strictly below −30°F. Choose any whole-degree threshold from −60°F to 60°F.
 - `rainfall=25..45&snowfall=0..50` selects counties averaging 25–45 inches of rain and up to 50 inches of new snow per year.
 - `cloudyDays=0..75` selects counties averaging at most 75 cloudy days per year. Old `cloud` percentage links open with the replacement filter paused so you can choose a range in days.

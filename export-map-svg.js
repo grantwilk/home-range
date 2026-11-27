@@ -107,59 +107,56 @@ export function mapBounds() {
   };
 }
 
-function addOverlay(root, defs, visible, local, screenScale, printAdjustment) {
+function captureOverlay(
+  root,
+  finishPass,
+  visible,
+  local,
+  screenScale,
+  printAdjustment,
+) {
   const live = byId("access-overlay");
   if (getComputedStyle(live).display === "none" || !live.childElementCount)
     return;
-  const overlay = append(root, "g", {});
+  finishPass();
   const countyRings = local
     ? new Set(visible.flatMap((d) => d.split("Z").filter(Boolean)))
     : null;
-  const usedShapes = new Set();
   for (const group of live.children) {
     const voteClip = group.getAttribute("clip-path");
-    // Each vote clip already consists entirely of county land. One clipping
-    // mask per group suffices even in PDF renderers that replace nested masks.
     const clipId = voteClip?.match(/#([\w-]+)/)?.[1] ?? "land-clip";
-    if (!defs.querySelector("#" + clipId)) {
-      let d = byId(clipId).firstElementChild.getAttribute("d");
-      if (local) {
-        d = voteClip
-          ? d
-              .split("Z")
-              .filter((ring) => countyRings.has(ring))
-              .map((ring) => ring + "Z")
-              .join("")
-          : visible.join("");
-      }
-      if (!d) continue;
-      const clip = append(defs, "clipPath", {
-        id: clipId,
-        clipPathUnits: "userSpaceOnUse",
-      });
-      append(clip, "path", { d });
+    let clip = byId(clipId).firstElementChild.getAttribute("d");
+    if (local) {
+      clip = voteClip
+        ? clip
+            .split("Z")
+            .filter((ring) => countyRings.has(ring))
+            .map((ring) => ring + "Z")
+            .join("")
+        : visible.join("");
     }
+    if (!clip) continue;
     const copy = group.cloneNode(true);
-    copy.setAttribute("clip-path", "url(#" + clipId + ")");
+    copy.removeAttribute("clip-path");
+    const unitsPerPixel =
+      printAdjustment /
+      (group.querySelector("g")?.getScreenCTM()?.a || screenScale);
     for (const use of copy.querySelectorAll("use")) {
-      const id = use.getAttribute("href").slice(1);
-      if (!usedShapes.has(id)) {
-        const def = byId(id).cloneNode(false);
-        def.removeAttribute("vector-effect");
-        defs.append(def);
-        usedShapes.add(id);
-      }
-      if (use.hasAttribute("stroke-width")) {
-        const bands = group.querySelector("g");
-        const unitsPerPixel =
-          printAdjustment / (bands?.getScreenCTM()?.a || screenScale);
-        use.setAttribute(
+      const path = byId(use.getAttribute("href").slice(1)).cloneNode(false);
+      path.removeAttribute("id");
+      path.removeAttribute("vector-effect");
+      path.setAttribute("fill", use.getAttribute("fill"));
+      if (use.hasAttribute("stroke")) {
+        path.setAttribute("stroke", use.getAttribute("stroke"));
+        path.setAttribute(
           "stroke-width",
           +use.getAttribute("stroke-width") * unitsPerPixel,
         );
       }
+      use.replaceWith(path);
     }
-    overlay.append(copy);
+    root.append(copy);
+    finishPass(clip);
   }
 }
 
@@ -237,7 +234,23 @@ export function captureMap(printScale, bounds = mapBounds()) {
   }
   for (const [fill, paths] of fills)
     append(root, "path", { fill, d: paths.join("") });
-  addOverlay(root, defs, visible, local, screenScale, printAdjustment);
+  const passes = [];
+  const serializer = new XMLSerializer();
+  function finishPass(clip) {
+    passes.push({ svg: serializer.serializeToString(root), clip });
+    root.replaceChildren(defs);
+  }
+  // Each access vote clips to its own county set. Keeping that clip separate
+  // lets the PDF draw it directly without constructing a transparency mask
+  // and recomputing bounds for every segment of the national contours.
+  captureOverlay(
+    root,
+    finishPass,
+    visible,
+    local,
+    screenScale,
+    printAdjustment,
+  );
   const nature = byId("nature-outline");
   strokePath(root, nature, nature.getAttribute("d"), scale);
   const mesh = new Map();
@@ -290,8 +303,9 @@ export function captureMap(printScale, bounds = mapBounds()) {
       label: node.textContent,
     }))
     .filter((point) => overlaps({ ...point, width: 0, height: 0 }, bounds));
+  finishPass();
   return {
-    svg: new XMLSerializer().serializeToString(root),
+    passes,
     bounds,
     stateLabels,
     pinCenters,

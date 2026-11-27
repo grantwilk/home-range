@@ -137,7 +137,7 @@ test("cold days use the selected daily-low threshold and include the annual rang
   filter.cutoff = -29;
   assert.equal(outcome(place, [filter], "all"), false);
   assert.equal(outcome({ values: {} }, [filter], "all"), null);
-  const state = { county: [filter], cutoff: 105 };
+  const state = { county: [filter, { ...f("heatDays", 0, 20), cutoff: 105 }] };
   assert.equal(cutoffFor(state, "coldDays"), -29);
   assert.equal(cutoffFor(state, "heatDays"), 105);
   assert.equal(cutoffFor(defaults(), "coldDays"), -30);
@@ -268,7 +268,7 @@ test("invalid link ranges, unknown layers and invalid heat cutoffs are handled",
   );
   assert.equal(state.layer, "janLow");
   assert.equal(state.mode, "all");
-  assert.equal(state.cutoff, 90);
+  assert.equal(cutoffFor(state, "heatDays"), 90);
   assert.deepEqual(
     state.county.map((f) => f.key),
     ["janLow", "julHigh", "heatDays"],

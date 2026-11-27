@@ -4,6 +4,7 @@ import { ReferenceMap, loadCityPoints } from "./map-reference.js";
 import { findPlaces, townDescription } from "./place-search.js";
 import {
   canAddFilter,
+  canAddKey,
   catalogMatches,
   entryFor,
   optionName,
@@ -11,6 +12,9 @@ import {
   changeSubtype,
 } from "./filter-catalog.js";
 import { readViewUrl, writeViewUrl } from "./view-url.js";
+import { mapBounds } from "./export-map-svg.js";
+import { downloadPdfFrame } from "./pdf-render-frame.js";
+import { openExportOptions } from "./export-options.js";
 import { editPlaces } from "./custom-places.js";
 import { coverKeys, landscapeValues, landShareLabel } from "./landscape.js";
 import { countyHazards, hazardLayers } from "./hazards.js";
@@ -25,6 +29,9 @@ import {
   outcome,
   countyReading,
   cutoffFor,
+  viewedId,
+  filterId,
+  setViewedFilter,
   matchRange,
   color,
   defaults,
@@ -75,6 +82,7 @@ let zoom = 1,
   drag = null,
   ignoreClick = false;
 
+const printJob = window.frameElement?.homeRangePdfJob;
 let lastViewUrl;
 let writeTimer;
 let restoringView = false;
@@ -171,8 +179,8 @@ function notify(msg) {
   notify.timer = setTimeout(() => ($("toast").textContent = ""), 2600);
 }
 // Choosing the displayed measure is independent of enabling its range.
-function selectLayer(key) {
-  state.layer = key;
+function selectLayer(card) {
+  setViewedFilter(state, card);
   renderControls();
   refresh();
 }
@@ -206,7 +214,7 @@ function rangeEditor(filter, city = false) {
       "</div>"
     : `<div class="endpoints"><span>${[poles[f.key]?.[0], fmt(min, m.unit)].filter(Boolean).join(" · ")}</span><span>${[poles[f.key]?.[1], fmt(max, m.unit)].filter(Boolean).join(" · ")}</span></div>`;
   return `<div class="editor" data-setting="${city ? "citySize" : "range"}" role="group" aria-label="${m.name} range">
-    ${m.threshold ? `<label class="cutoff-label">${f.key === "coldDays" ? "Count daily lows below" : "Count days at or above"} <input class="cutoff" type="number" min="${m.threshold.min}" max="${m.threshold.max}" step="1" value="${f.cutoff}"> °F</label>` : ""}
+    ${m.threshold ? `<label class="cutoff-label">${f.key === "coldDays" ? "Daily low below" : "Daily high at or above"} <input class="cutoff" type="number" min="${m.threshold.min}" max="${m.threshold.max}" step="1" value="${f.cutoff}"> °F</label>` : ""}
     <div class="bound-fields">${inputs}</div>
     <div class="range-track"><div class="range-line">${handles}</div></div>
     ${endpoints}</div>`;
@@ -274,7 +282,7 @@ function subtypePicker(f, entry) {
   const options = entry.keys
     .map((key) => {
       const selected = key === f.key;
-      const disabled = !selected && used.has(key);
+      const disabled = !selected && !canAddKey(key, used);
       return `<option value="${key}" ${selected ? "selected" : disabled ? "disabled" : ""}>${esc(optionName(key))}${disabled ? " (already added)" : ""}</option>`;
     })
     .join("");
@@ -284,14 +292,14 @@ function layerRow(f, index) {
   const key = f.key,
     m = layers[key],
     entry = entryFor(key),
-    viewing = state.layer === key;
-  return `<section class="filter-row ${viewing ? "viewing" : ""}" data-key="${key}" data-index="${index}" aria-label="${esc(m.name)}">
-    <div class="filter-top"><button class="layer-choice" data-view="${key}" aria-label="View ${esc(m.name)}" title="View ${esc(m.name)}"><span class="tile-icon ${m.icon}">${icon(m.icon, 18)}</span><span class="row-name"><strong>${esc(entry.name)}</strong>${m.facility ? "<small>Straight-line miles</small>" : !entry.label && poles[key] ? `<small>${poles[key].join(" → ")}</small>` : ""}</span></button>
-    <button class="eye" data-eye="${key}" title="View ${m.name} on Map" aria-label="View ${m.name} on map" aria-pressed="${viewing}">${icon("eye", 18)}</button>
+    id = filterId(f),
+    viewing = viewedId(state) === id;
+  return `<section class="filter-row ${viewing ? "viewing" : ""}" data-key="${key}" data-index="${index}" data-card="${id}" aria-label="${esc(m.name)}">
+    <div class="filter-top"><button class="layer-choice" data-view="${id}" aria-label="View ${esc(m.name)}" title="View ${esc(m.name)}"><span class="tile-icon ${m.icon}">${icon(m.icon, 18)}</span><span class="row-name"><strong>${esc(entry.name)}</strong>${m.facility ? "<small>Straight-line miles</small>" : !entry.label && poles[key] ? `<small>${poles[key].join(" → ")}</small>` : ""}</span></button>
+    <button class="eye" data-eye="${id}" title="View ${m.name} on Map" aria-label="View ${m.name} on map" aria-pressed="${viewing}">${icon("eye", 18)}</button>
     <button class="switch" type="button" role="switch" data-toggle="${index}" aria-checked="${f.on}" aria-label="Enable ${m.name} filter"><span></span></button>
-    <button class="drop-filter" data-drop="${key}" aria-label="Remove ${m.name} filter" title="Remove Filter">${icon("cross", 15)}</button></div>
+    <button class="drop-filter" data-drop="${id}" aria-label="Remove ${m.name} filter" title="Remove Filter">${icon("cross", 15)}</button></div>
     <div class="row-body">${subtypePicker(f, entry)}<p class="row-description">${m.description}</p>
-    ${viewing && key === "heatDays" ? `<label class="cutoff-label">Map days at or above <input class="cutoff" id="display-cutoff" type="number" min="60" max="110" value="${state.cutoff}"> °F</label>` : ""}
     ${rangeEditor(f)}
     ${notApplicableLayers.has(key) ? '<p class="method-note">A minimum of 0 includes counties FEMA marks “Not applicable.”</p>' : ""}
     ${key === "cities" ? '<h3 class="field-heading">City Population Range</h3>' + rangeEditor(f, true) : ""}
@@ -305,6 +313,7 @@ function renderControls() {
   const focus = list.contains(document.activeElement)
     ? document.activeElement
     : null;
+  const focusCard = focus?.closest("[data-card]")?.dataset.card;
   const focusName = focus?.getAttribute("aria-label");
   const focusKey = focus?.closest("[data-view]")?.dataset.view;
   for (const mode of ["all", "any"]) pressed(mode, state.mode === mode);
@@ -312,13 +321,13 @@ function renderControls() {
     ? filters().map(layerRow).join("")
     : '<p class="empty-filters">Add a filter to explore the map.</p>';
   for (const editor of list.querySelectorAll(".editor")) syncRange(editor);
-  $("add-filter").disabled = !canAddFilter(
-    new Set(filters().map((f) => f.key)),
-  );
+  $("add-filter").disabled = !canAddFilter(new Set(filters().map(filterId)));
   list.scrollTop = scroll;
   if (focusName)
     list
-      .querySelector('[aria-label="' + CSS.escape(focusName) + '"]')
+      .querySelector(
+        `[data-card="${focusCard}"] [aria-label="${CSS.escape(focusName)}"]`,
+      )
       ?.focus({ preventScroll: true });
   else if (focusKey)
     list
@@ -336,13 +345,13 @@ function bindFilters() {
       return;
     }
     if (view || eye) {
-      selectLayer(view || eye);
+      selectLayer(filterFor(btn));
       return;
     }
     const all = filters();
     if (drop) {
-      state.county = all.filter((f) => f.key !== drop);
-      if (state.layer === drop) state.layer = state.county[0]?.key ?? null;
+      state.county = all.filter((f) => filterId(f) !== drop);
+      if (viewedId(state) === drop) setViewedFilter(state, state.county[0]);
       renderControls();
       refresh();
       $("add-filter").focus({ preventScroll: true });
@@ -359,25 +368,31 @@ function bindFilters() {
     if (control.matches("[data-picker]")) {
       const old = filterFor(control);
       const key = control.selectedOptions[0].dataset.measure ?? control.value;
-      if (filters().some((card) => card.key === key)) return;
-      const replacement = changeSubtype(old, key);
+      if (
+        key === old.key ||
+        !canAddKey(
+          key,
+          new Set(
+            filters()
+              .filter((f) => f !== old)
+              .map(filterId),
+          ),
+        )
+      )
+        return;
+      const replacement = changeSubtype(old, key, filters());
       filters()[filters().indexOf(old)] = replacement;
-      if (state.layer === old.key) state.layer = replacement.key;
+      if (viewedId(state) === filterId(old))
+        setViewedFilter(state, replacement);
       renderControls();
       refresh();
       list
         .querySelector(
-          `[data-key="${replacement.key}"] [data-picker="${control.dataset.picker}"]`,
+          `[data-card="${filterId(replacement)}"] [data-picker="${control.dataset.picker}"]`,
         )
         .focus({ preventScroll: true });
       if (key === "custom" && !replacement.points.length)
         openPlaces(replacement);
-      return;
-    }
-    if (control.id === "display-cutoff") {
-      state.cutoff = clampNum(control.value, 60, 110, state.cutoff, 1);
-      control.value = state.cutoff;
-      refresh();
       return;
     }
     const editor = control.closest(".editor");
@@ -409,7 +424,7 @@ function bindFilters() {
     if (cutoff !== f.cutoff) enableEditedFilter(editor, f);
     f.cutoff = cutoff;
     control.value = f.cutoff;
-    refreshOnFrame();
+    refresh();
   }
   list.addEventListener("change", (e) => {
     if (!e.target.matches(".range")) change(e.target);
@@ -605,7 +620,7 @@ function catalogColumns(groups) {
 }
 
 function addFilter() {
-  const used = new Set(filters().map((f) => f.key));
+  const used = new Set(filters().map(filterId));
   showDialog(
     "Add a Filter",
     '<input class="searchinput" id="catalog-search" type="search" aria-label="Search filters" placeholder="Search filters" autocomplete="off"><div id="catalog-options"></div>',
@@ -646,75 +661,23 @@ function addFilter() {
     const button = event.target.closest("[data-pick]");
     if (!button) return;
     const key = button.dataset.measure;
-    const filter = newCard(key);
+    const filter = newCard(key, filters());
     filters().push(filter);
     if (!state.layer || layers[key].facility || layers[key].hazard)
-      state.layer = key;
+      setViewedFilter(state, filter);
     dialog.close();
     renderControls();
     refresh();
-    const row = $("filters").querySelector(`[data-key="${key}"]`);
+    const row = $("filters").querySelector(`[data-card="${filterId(filter)}"]`);
     (
       row.querySelector("[data-picker]") || row.querySelector("[data-view]")
     ).focus();
     if (key === "custom") openPlaces(filter);
   };
 }
-function paintLegend() {
-  const m = metric();
-  $("legend-scale").hidden = !m;
-  if (!m) {
-    $("legend-name").textContent = "County Boundaries";
-    $("legend-sub").textContent = "United States · 2017";
-    $("legend-icon").innerHTML = icon("location");
-    $("legend-unit").textContent = "";
-    $("credits").innerHTML =
-      '<a href="https://www2.census.gov/geo/tiger/GENZ2017/shp/cb_2017_us_county_500k.zip">U.S. Census Bureau · 2017 county boundaries</a>';
-    return;
-  }
-  $("legend-name").textContent = metricName(
-    state.layer,
-    cutoffFor(state, state.layer),
-  );
-  $("legend-icon").innerHTML = icon(m.icon);
-  const statistic =
-    {
-      populationDensity: "Residents per land area",
-      cloudyDays: "24-hour cloud cover ≥80%",
-      coldDays: "Average days per year · daily low",
-      rainfall: "Mean annual rainfall",
-      snowfall: "Mean seasonal snowfall",
-    }[state.layer] ??
-    (m.landCover ? "Share of county land" : poles[state.layer]?.join(" → "));
-  $("legend-sub").textContent =
-    (m.hazard
-      ? "National risk percentile"
-      : crimeCredits[state.layer]
-        ? "Annual rate"
-        : (statistic ?? "County average")) +
-    " · " +
-    periodFor(state.layer);
-  if (m.facility) {
-    const count = access?.shown === state.layer ? access.count : undefined;
-    const countLabel =
-      count === undefined || m.nature
-        ? ""
-        : number(count) + (count === 1 ? " location" : " locations");
-    $("legend-sub").textContent = [
-      m.period,
-      countLabel,
-      count === 0 && state.layer === "custom"
-        ? "Add a place"
-        : count === 0 && state.layer === "cities"
-          ? "Widen the population range"
-          : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }
-  $("legend-unit").textContent = m.unit;
+function paintCredits() {
   const keys = [
-    state.layer,
+    ...(state.layer ? [state.layer] : []),
     ...filters()
       .filter((f) => f.on)
       .map((f) => f.key),
@@ -760,6 +723,62 @@ function paintLegend() {
       });
       showDialog("Location Sources & Downloads", entries.join(""));
     };
+}
+function paintLegend() {
+  const m = metric();
+  $("legend-scale").hidden = !m;
+  if (!m) {
+    $("legend-name").textContent = "County Boundaries";
+    $("legend-sub").textContent = "United States · 2017";
+    $("legend-icon").innerHTML = icon("location");
+    $("legend-unit").textContent = "";
+    $("credits").innerHTML =
+      '<a href="https://www2.census.gov/geo/tiger/GENZ2017/shp/cb_2017_us_county_500k.zip">U.S. Census Bureau · 2017 county boundaries</a>';
+    if (printJob && filters().some((f) => f.on)) paintCredits();
+    return;
+  }
+  $("legend-name").textContent = metricName(
+    state.layer,
+    cutoffFor(state, state.layer),
+  );
+  $("legend-icon").innerHTML = icon(m.icon);
+  const statistic =
+    {
+      populationDensity: "Residents per land area",
+      cloudyDays: "24-hour cloud cover ≥80%",
+      coldDays: "Average days per year · daily low",
+      rainfall: "Mean annual rainfall",
+      snowfall: "Mean seasonal snowfall",
+    }[state.layer] ??
+    (m.landCover ? "Share of county land" : poles[state.layer]?.join(" → "));
+  $("legend-sub").textContent =
+    (m.hazard
+      ? "National risk percentile"
+      : crimeCredits[state.layer]
+        ? "Annual rate"
+        : (statistic ?? "County average")) +
+    " · " +
+    periodFor(state.layer);
+  if (m.facility) {
+    const count = access?.shown === viewedId(state) ? access.count : undefined;
+    const countLabel =
+      count === undefined || m.nature
+        ? ""
+        : number(count) + (count === 1 ? " location" : " locations");
+    $("legend-sub").textContent = [
+      m.period,
+      countLabel,
+      count === 0 && state.layer === "custom"
+        ? "Add a place"
+        : count === 0 && state.layer === "cities"
+          ? "Widen the population range"
+          : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  $("legend-unit").textContent = m.unit;
+  paintCredits();
   const bounds =
     state.layer === "populationDensity" || state.layer === "elevation"
       ? m.bins.map((n) => compactNumber.format(n))
@@ -795,7 +814,7 @@ function refresh(continuous = false) {
   const m = metric(),
     active = filters().filter((f) => f.on);
   const local = filters().filter((f) => layers[f.key].facility);
-  const hasAccess = local.some((f) => f.on || f.key === state.layer);
+  const hasAccess = local.some((f) => f.on || filterId(f) === viewedId(state));
   const county = active.filter((f) => !layers[f.key].facility),
     votes = new Int8Array(places.length);
   const mapCutoff = cutoffFor(state, state.layer);
@@ -809,21 +828,25 @@ function refresh(continuous = false) {
         : Number(countyPass)
       : 2;
     const c =
-      !m || m.facility
+      m?.facility || (!m && !printJob)
         ? "#cfdbcc"
         : pass === false
           ? "#d8ded4"
           : pass === null
             ? "url(#uncertain)"
-            : p.hazardRatings[state.layer] === "Not Applicable"
-              ? "var(--inapplicable)"
-              : v === null
-                ? "url(#missing)"
-                : color(m, v);
+            : !m
+              ? "#7ca38a"
+              : p.hazardRatings[state.layer] === "Not Applicable"
+                ? "var(--inapplicable)"
+                : v === null
+                  ? "url(#missing)"
+                  : color(m, v);
     fill(p.el, c);
   }
-  access?.update(local, state.layer, state.mode, votes);
-  referenceMap?.update(local);
+  access?.update(local, viewedId(state), state.mode, votes);
+  referenceMap?.update(
+    printJob ? local.filter((f) => printJob.symbols.includes(f.key)) : local,
+  );
 
   paintLegend();
 }
@@ -1221,7 +1244,7 @@ async function pointDetails(county, point) {
       return `<div class="minirow"><span>${esc(metricName(f.key, f.cutoff))}</span><b>${countyReading(county, f.key, f.cutoff)}${hit === null ? " · Unknown" : hit ? " · Match" : " · Outside"}</b></div>`;
     });
   const rows = result.rows.map((row) => {
-    const f = filters().find((card) => card.key === row.key);
+    const f = filters().find((card) => filterId(card) === row.id);
     const distance = row.miles;
     const reading = !row.name ? "No eligible locations" : fmt(distance, "mi");
     const hit = !row.name
@@ -1359,37 +1382,34 @@ function bind() {
     }
   });
 
-  const exportButton = $("export-pdf");
-  exportButton.disabled = false;
-  exportButton.onclick = async () => {
-    exportButton.disabled = true;
-    exportButton.setAttribute("aria-busy", "true");
-    exportButton.querySelector("span").textContent = "Exporting…";
-    try {
-      const { downloadMap } = await import(
-        new URL(import.meta.mapPdf ?? "./map-pdf.js", import.meta.url).href
-      );
-      await downloadMap({
-        getState: () => state,
-        getSelected: () => byID.get(selected),
-        referenceMap,
-        access,
-      });
-      notify("Map PDF downloaded");
-    } catch (error) {
-      console.error("Map PDF export failed", error);
-      showDialog(
-        "Map Couldn’t Be Exported",
-        "<p>" +
-          esc(error.message) +
-          "</p><p>Close this message and select Export PDF to try again.</p>",
-      );
-    } finally {
-      exportButton.disabled = false;
-      exportButton.removeAttribute("aria-busy");
-      exportButton.querySelector("span").textContent = "Export PDF";
-    }
-  };
+  $("export-pdf").disabled = false;
+  $("export-pdf").onclick = () =>
+    openExportOptions({
+      state,
+      showDialog,
+      onExport: async (options, signal) => {
+        const national = options.extent === "national";
+        const { x, y, width, height } = national
+          ? mapFit.viewBox.baseVal
+          : mapBounds();
+        const printState = structuredClone(state);
+        setViewedFilter(
+          printState,
+          printState.county.find((f) => filterId(f) === options.layer),
+        );
+        await downloadPdfFrame(
+          {
+            state: printState,
+            bounds: { x, y, width, height },
+            symbols: options.symbols,
+            zoom: national ? 1 : zoom,
+            selected,
+          },
+          signal,
+        );
+        notify("Map PDF downloaded");
+      },
+    });
   $("share").onclick = async () => {
     syncAddress();
     const href = shareUrl();
@@ -1654,6 +1674,38 @@ async function init() {
   }
   byID = new Map(places.map((p) => [p.uid, p]));
 
+  access = new FacilityMap(places, paintLegend);
+  referenceMap = new ReferenceMap();
+  if (printJob) {
+    restoringView = true;
+    state = structuredClone(printJob.state);
+    selected = printJob.selected;
+    zoom = printJob.zoom;
+    document.body.classList.add("pdf-render-document");
+    const { x, y, width, height } = printJob.bounds;
+    mapFit.setAttribute("viewBox", [x, y, width, height].join(" "));
+    mapFit.setAttribute("height", "100%");
+    svg.classList.toggle("zoomed", zoom > 1);
+    styleMapScale();
+    highlight();
+    refresh();
+    $("loading").hidden = true;
+    const { createMapPdf } = await import(
+      new URL(import.meta.mapPdf ?? "./map-pdf.js", import.meta.url).href
+    );
+    printJob.resolve(
+      await createMapPdf({
+        getState: () => state,
+        getSelected: () => byID.get(selected),
+        access,
+        referenceMap,
+        bounds: printJob.bounds,
+        solid: !state.layer,
+      }),
+    );
+    return;
+  }
+
   // Keep the reset view between the controls while zoomed geography can fill the canvas.
   const guide = $("map-guide");
   function fitMapFrame() {
@@ -1668,8 +1720,6 @@ async function init() {
   resizeMap.observe(guide);
   resizeMap.observe(document.querySelector(".map-toolbar"));
 
-  access = new FacilityMap(places, paintLegend);
-  referenceMap = new ReferenceMap();
   bind();
   bindFilters();
   window.addEventListener("popstate", restoreAddress);
@@ -1681,6 +1731,10 @@ async function init() {
   $("loading").hidden = true;
 }
 init().catch((err) => {
+  if (printJob) {
+    printJob.reject(err);
+    return;
+  }
   console.error(err);
   $("loading").replaceChildren(
     "Home Range could not load the map data. ",

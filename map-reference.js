@@ -198,7 +198,7 @@ export class ReferenceMap {
     heading.className = "reference-heading";
     heading.textContent = "Map Key";
     frag.append(heading);
-    for (const key of ["towns", ...this.filters.map((f) => f.key)]) {
+    for (const key of new Set(["towns", ...this.filters.map((f) => f.key)])) {
       const entry = document.createElement("span");
       entry.dataset.key = key;
       entry.className = "reference-entry";

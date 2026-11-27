@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readViewUrl, writeViewUrl } from "../view-url.js";
-import { defaults, freshFilter, parseView, layers } from "../model.js";
+import {
+  defaults,
+  freshFilter,
+  parseView,
+  layers,
+  cutoffFor,
+  outcome,
+} from "../model.js";
 
 const base = "https://example.org/home-range/";
 const read = (url, warn = assert.fail) =>
@@ -41,7 +48,7 @@ test("cold day thresholds restore independently of hot days and reject invalid v
     const cold = displayed.county.find((filter) => filter.key === "coldDays");
     assert.equal(cold.on, false);
     assert.equal(cold.cutoff, cutoff);
-    assert.equal(displayed.cutoff, 100);
+    assert.equal(Object.hasOwn(displayed, "cutoff"), false);
   }
   for (const invalid of ["", "-61", "61", "-30.5", "NaN"]) {
     const warnings = [];
@@ -60,6 +67,86 @@ test("cold day thresholds restore independently of hot days and reject invalid v
   assert.equal(updated.searchParams.has("coldDays.cutoff"), false);
   assert.deepEqual(read(updated), example);
 });
+test("a former map-only cutoff never overrides the saved filter threshold", () => {
+  const old = new URL(
+    "?heatDays=0..14&heatDays.cutoff=95&mapCutoff=85&layer=heatDays",
+    base,
+  );
+  const state = read(old);
+  assert.equal(state.county[0].cutoff, 95);
+  assert.equal(
+    writeViewUrl(old, state, [1, 0, 0]).searchParams.has("mapCutoff"),
+    false,
+  );
+});
+
+test("repeated thresholds vote separately and restore the displayed card, with or without the original", () => {
+  const county = [
+    f("coldDays", 0, 14, { cutoff: 0 }),
+    f("coldDays", 0, 30, { id: "coldDays~2", cutoff: 10 }),
+    f("heatDays", 0, 20),
+    f("heatDays", 0, 7, { id: "heatDays~2", cutoff: 100, on: false }),
+    f("janLow", 0, 20),
+    f("janHigh", 0, 32),
+  ];
+  const state = {
+    county,
+    layer: "coldDays",
+    layerId: "coldDays~2",
+    mode: "all",
+  };
+  const url = writeViewUrl(base, state, [1, 0, 0]);
+  assert.deepEqual(read(url), state);
+  assert.equal(cutoffFor(read(url), "coldDays"), 10);
+  const values = {
+    coldDays: Array(121).fill(null),
+    heatDays: Array(61).fill(0),
+    janLow: 10,
+    janHigh: 28,
+  };
+  values.coldDays[60] = 14;
+  values.coldDays[70] = 31;
+  assert.equal(outcome({ values }, county, "all"), false);
+  assert.equal(outcome({ values }, county, "any"), true);
+  values.coldDays[70] = 30;
+  assert.equal(outcome({ values }, county, "all"), true);
+  const remaining = { ...state, county: county.slice(1) };
+  const next = writeViewUrl(url, remaining, [1, 0, 0]);
+  assert.deepEqual(read(next), remaining);
+  assert.equal(next.searchParams.has("coldDays"), false);
+});
+
+test("repeated city populations and private custom point lists are independently shareable and removable", () => {
+  const county = [
+    f("cities", 0, 5, { citySize: { min: 10, max: 50000 } }),
+    f("cities", 0, 25, {
+      id: "cities~2",
+      citySize: { min: 150000, max: 10000000 },
+    }),
+    f("custom", 0, 5, { points: [["Grandma & Grandpa", -89, 42]] }),
+    f("custom", 0, 12, {
+      id: "custom~2",
+      points: [["Work", -87, 43]],
+      on: false,
+    }),
+  ];
+  const state = { county, layer: "custom", layerId: "custom~2", mode: "all" };
+  const url = writeViewUrl(base + "#keep", state, [1, 0, 0]);
+  assert.deepEqual(read(url), state);
+  assert.doesNotMatch(url.search, /Grandma|Work|-87|-89/);
+  assert.match(url.hash, /Work/);
+  const changed = {
+    county: [county[1], county[2]],
+    layer: "cities",
+    layerId: "cities~2",
+    mode: "all",
+  };
+  const next = writeViewUrl(url, changed, [1, 0, 0]);
+  assert.doesNotMatch(next.href, /Work/);
+  assert.match(next.hash, /keep/);
+  assert.deepEqual(read(next), changed);
+});
+
 test("every layer and its settings survive a share, including custom labels in the fragment", () => {
   const county = Object.keys(layers).map((key) => freshFilter(key));
   const byKey = Object.fromEntries(county.map((f) => [f.key, f]));
@@ -76,7 +163,7 @@ test("every layer and its settings survive a share, including custom labels in t
     43.071234567,
   ];
   byKey.custom.points = [point, ["Second", 0, 0]];
-  const state = { county, layer: "heatDays", mode: "any", cutoff: 101 };
+  const state = { county, layer: "heatDays", mode: "any" };
   const extent = [2.75, -612.500011, -350];
   const source = base + "?tag=a&janLow=1..2&tag=b#map";
   const url = writeViewUrl(source, state, extent);
@@ -85,7 +172,7 @@ test("every layer and its settings survive a share, including custom labels in t
   assert.deepEqual(url.searchParams.getAll("tag"), ["a", "b"]);
   assert.equal(url.searchParams.get("heatDays.cutoff"), "83");
   assert.equal(url.searchParams.get("coldDays.cutoff"), "-32");
-  assert.equal(url.searchParams.get("mapCutoff"), "101");
+  assert.equal(url.searchParams.has("mapCutoff"), false);
   assert.ok(url.hash.startsWith("#map&place="));
   assert.ok(!url.search.includes("89.401") && !url.search.includes("Apt"));
   assert.equal(writeViewUrl(url, state, extent).href, url.href);

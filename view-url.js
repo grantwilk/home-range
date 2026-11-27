@@ -1,6 +1,14 @@
 // The query describes the map. Saved custom locations stay in the fragment,
 // which a browser keeps out of requests to the static host.
-import { layers, defaults, freshFilter, retiredMeasure } from "./model.js";
+import {
+  layers,
+  defaults,
+  freshFilter,
+  retiredMeasure,
+  measureKey,
+  filterId,
+  viewedId,
+} from "./model.js";
 import { validPoint } from "./facility-model.js";
 
 const settings = new Set([
@@ -10,21 +18,30 @@ const settings = new Set([
   "filters",
   "extent",
   "mapCutoff",
-  "heatDays.cutoff",
-  "coldDays.cutoff",
-  "cities.population",
 ]);
 const retiredRegions = ["prairieRegion", "plainsRegion", "desertClimate"];
-const isLayer = (key) => Object.hasOwn(layers, key);
 // Retired measure keys must reach the model’s unit migration.
-const readableLayer = (key) => retiredMeasure(key) || isLayer(key);
-const isSetting = (key) =>
-  settings.has(key) ||
-  retiredRegions.includes(key) ||
-  readableLayer(key) ||
-  (key.endsWith(".unit") &&
-    isLayer(key.slice(0, -5)) &&
-    layers[key.slice(0, -5)].facility);
+const readableLayer = (id) => retiredMeasure(id) || Boolean(measureKey(id));
+function isSetting(param) {
+  if (
+    settings.has(param) ||
+    retiredRegions.includes(param) ||
+    readableLayer(param)
+  )
+    return true;
+  const [id, option, extra] = param.split(".");
+  const key = measureKey(id);
+  if (!key || extra !== undefined) return false;
+  return (
+    (option === "cutoff" && layers[key].threshold) ||
+    (option === "unit" && layers[key].facility) ||
+    (option === "population" && key === "cities")
+  );
+}
+const placeParam = (id) => id.replace(/^custom/, "place");
+const isPlaceParam = (key) =>
+  measureKey(key.replace(/^place(?=~|$)/, "custom")) === "custom" &&
+  key.startsWith("place");
 const numeric = (part) => (part?.trim() ? Number(part) : NaN);
 
 function readRange(text) {
@@ -47,24 +64,23 @@ export function readViewUrl(url, warn) {
     }
   }
   const raw = { mode: q.get("match"), layer: q.get("layer") };
-  if (q.has("mapCutoff")) raw.cutoff = numeric(q.get("mapCutoff"));
   if (q.has("extent")) raw.extent = q.get("extent").split(",").map(numeric);
 
   const paused = new Set(q.getAll("paused"));
   function restoreOptions(f) {
     const key = f.key;
+    const id = filterId(f);
     // Legacy shares expressed travel-time ranges with a unit query parameter.
     // Pass only the old minute marker to parseView for explicit migration.
-    if (layers[key]?.facility && q.get(key + ".unit") === "min")
-      f.units = "min";
-    if (layers[key]?.threshold && q.has(key + ".cutoff"))
-      f.cutoff = numeric(q.get(key + ".cutoff"));
-    if (key === "cities" && q.has("cities.population"))
-      f.citySize = readRange(q.get("cities.population"));
+    if (layers[key]?.facility && q.get(id + ".unit") === "min") f.units = "min";
+    if (layers[key]?.threshold && q.has(id + ".cutoff"))
+      f.cutoff = numeric(q.get(id + ".cutoff"));
+    if (key === "cities" && q.has(id + ".population"))
+      f.citySize = readRange(q.get(id + ".population"));
     if (key === "custom") {
       f.points = [];
       const fragment = new URLSearchParams(url.hash.slice(1));
-      for (const encoded of fragment.getAll("place")) {
+      for (const encoded of fragment.getAll(placeParam(id))) {
         try {
           const point = JSON.parse(encoded);
           if (!validPoint(point)) throw new Error();
@@ -77,10 +93,16 @@ export function readViewUrl(url, warn) {
     return f;
   }
   const county = [];
-  for (const [key, text] of q) {
-    if (!readableLayer(key)) continue;
+  for (const [id, text] of q) {
+    if (!readableLayer(id)) continue;
+    const key = measureKey(id) ?? id;
     county.push(
-      restoreOptions({ key, ...readRange(text), on: !paused.has(key) }),
+      restoreOptions({
+        key,
+        ...(key === id ? {} : { id }),
+        ...readRange(text),
+        on: !paused.has(id),
+      }),
     );
   }
   if (
@@ -92,12 +114,17 @@ export function readViewUrl(url, warn) {
     raw.county = county;
   if (readableLayer(raw.layer) && q.get("filters") !== "none") {
     raw.county ??= defaults().county;
-    if (!raw.county.some((f) => f.key === raw.layer))
+    if (!raw.county.some((f) => filterId(f) === raw.layer)) {
+      const key = measureKey(raw.layer);
       raw.county.push(
-        isLayer(raw.layer)
-          ? restoreOptions(freshFilter(raw.layer))
+        key
+          ? restoreOptions({
+              ...freshFilter(key),
+              ...(key === raw.layer ? {} : { id: raw.layer }),
+            })
           : { key: raw.layer, on: false },
       );
+    }
   }
   return raw;
 }
@@ -113,24 +140,29 @@ export function writeViewUrl(base, state, extent) {
     : url.hash
         .slice(1)
         .split("&")
-        .filter((part) => part && !new URLSearchParams(part).has("place"));
+        .filter(
+          (part) =>
+            part && ![...new URLSearchParams(part).keys()].some(isPlaceParam),
+        );
   for (const f of state.county) {
-    q.append(f.key, rangeText(f));
-    if (!f.on) q.append("paused", f.key);
+    const id = filterId(f);
+    q.append(id, rangeText(f));
+    if (!f.on) q.append("paused", id);
     const threshold = layers[f.key]?.threshold;
     if (threshold && f.cutoff !== threshold.initial)
-      q.set(f.key + ".cutoff", f.cutoff);
-    if (f.key === "cities") q.set("cities.population", rangeText(f.citySize));
+      q.set(id + ".cutoff", f.cutoff);
+    if (f.key === "cities") q.set(id + ".population", rangeText(f.citySize));
     if (f.key === "custom")
       for (const point of f.points)
         fragment.push(
-          new URLSearchParams({ place: JSON.stringify(point) }).toString(),
+          new URLSearchParams({
+            [placeParam(id)]: JSON.stringify(point),
+          }).toString(),
         );
   }
   if (!state.county.length) q.set("filters", "none");
-  if (state.layer) q.set("layer", state.layer);
+  if (state.layer) q.set("layer", viewedId(state));
   q.set("match", state.mode);
-  if (state.cutoff !== 90) q.set("mapCutoff", state.cutoff);
   if (extent[0] !== 1) q.set("extent", extent.join(","));
   url.hash = fragment.join("&");
   return url;

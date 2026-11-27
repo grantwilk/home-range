@@ -1,7 +1,14 @@
 // A catalog entry groups interchangeable measures. Each card and shared URL
 // keeps its concrete measure key so several hazards or place types can coexist.
 import { coverKeys } from "./landscape.js";
-import { layers, freshFilter, monthlyTemperatureKeys } from "./model.js";
+import {
+  layers,
+  freshFilter,
+  monthlyTemperatureKeys,
+  filterId,
+  repeatableMeasures,
+  maxFilters,
+} from "./model.js";
 
 const single = (key, description, searchTerms) => ({
   id: key,
@@ -153,8 +160,9 @@ const seasonalTemperatures = new Map(
 );
 export const entryFor = (key) =>
   byMeasure.get(key) ?? seasonalTemperatures.get(key);
-export const canAddFilter = (used) =>
-  [...byMeasure.keys()].some((key) => !used.has(key));
+export const canAddFilter = (used) => used.size < maxFilters;
+export const canAddKey = (key, used) =>
+  !used.has(key) || repeatableMeasures.has(key);
 
 export function optionName(key) {
   if (key === "coast") return "Coast & Great Lakes";
@@ -201,7 +209,7 @@ export function catalogMatches(used, query = "") {
           .join(" ")
           .toLowerCase();
         const matches = entry.keys.filter((key) => {
-          if (used.has(key)) return false;
+          if (!canAddKey(key, used)) return false;
           const m = layers[key];
           const terms = [
             common,
@@ -219,7 +227,7 @@ export function catalogMatches(used, query = "") {
           ? [
               {
                 entry,
-                key: matches[0],
+                key: matches.find((key) => !used.has(key)) ?? matches[0],
                 detail:
                   words.length && matches.length === 1 && entry.label
                     ? layers[matches[0]].name
@@ -232,16 +240,29 @@ export function catalogMatches(used, query = "") {
     .filter((group) => group.entries.length);
 }
 
-export function newCard(key) {
+// A copy keeps its ID when a sibling is removed or the view is shared.
+function assignId(card, existing) {
+  const key = card.key;
+  if (!repeatableMeasures.has(key)) return card;
+  const used = new Set(existing.map(filterId));
+  if (!used.has(filterId(card))) return card;
+  let id = key;
+  for (let n = 2; used.has(id); n++) id = key + "~" + n;
+  if (id === key) delete card.id;
+  else card.id = id;
+  return card;
+}
+
+export function newCard(key, existing = []) {
   const card = freshFilter(key, key !== "custom");
   if (layers[key].facility) card.max = layers[key].radius;
-  return card;
+  return assignId(card, existing);
 }
 
 // Remember a card’s edited subtypes during the session. Only the chosen one is
 // active, and only its settings and custom locations are included when sharing.
 const previousChoices = new WeakMap();
-export function changeSubtype(current, key) {
+export function changeSubtype(current, key, existing = []) {
   if (key === current.key || !entryFor(current.key).keys.includes(key))
     return current;
   const saved = previousChoices.get(current) ?? new Map();
@@ -262,5 +283,8 @@ export function changeSubtype(current, key) {
   }
   next.on = current.on && (key !== "custom" || next.points.length > 0);
   previousChoices.set(next, saved);
-  return next;
+  return assignId(
+    next,
+    existing.filter((card) => card !== current),
+  );
 }

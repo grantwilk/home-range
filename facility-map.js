@@ -1,3 +1,4 @@
+import { filterId } from "./model.js";
 import { combine, projection } from "./spatial.js";
 import { accessColors, facilityLayers } from "./facility-model.js";
 
@@ -202,7 +203,7 @@ export class FacilityMap {
     this.inspections.clear();
   }
   update(filters, layer, mode, countyFlags) {
-    this.active = !!filters.find((f) => f.on || f.key === layer);
+    this.active = !!filters.find((f) => f.on || filterId(f) === layer);
     if (!this.active) {
       clearTimeout(this.timer);
       this.worker?.postMessage({ type: "cancel", id: ++this.serial });
@@ -214,7 +215,7 @@ export class FacilityMap {
       return;
     }
     this.start();
-    const shown = filters.find((f) => f.key === layer);
+    const shown = filters.find((f) => filterId(f) === layer);
     const viewKey = JSON.stringify([layer, shown?.citySize, shown?.points]);
     if (viewKey !== this.viewKey) {
       this.hideCoverage();
@@ -249,7 +250,7 @@ export class FacilityMap {
       }
       const nature = this.request.filters.some(
         (f) =>
-          (f.on || f.key === this.request.layer) &&
+          (f.on || filterId(f) === this.request.layer) &&
           facilityLayers[f.key].nature,
       );
       const density = Math.min(
@@ -283,7 +284,7 @@ export class FacilityMap {
       return Promise.resolve({ error: this.status.textContent });
     const id = ++this.probeId;
     const filters = this.request.filters.filter(
-      (f) => f.on || f.key === this.request.layer,
+      (f) => f.on || filterId(f) === this.request.layer,
     );
     return new Promise((resolve) => {
       this.inspections.set(id, resolve);

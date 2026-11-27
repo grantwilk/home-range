@@ -1518,3 +1518,111 @@ h1 {
 .land-track {
   background: #edf0e9;
 }
+
+#pdf-options {
+  display: grid;
+  gap: 18px;
+}
+#pdf-options fieldset {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#pdf-options legend,
+.pdf-label {
+  display: block;
+  padding: 0;
+  margin: 0 0 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+.pdf-extent,
+.pdf-symbols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+}
+.pdf-extent label,
+.pdf-symbol {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.pdf-extent label {
+  min-height: 40px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.pdf-extent label:has(:checked) {
+  border-color: #88aa91;
+  background: var(--light);
+}
+#pdf-options input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--green);
+}
+.pdf-symbol svg {
+  flex: none;
+}
+.pdf-note,
+.pdf-feedback {
+  color: var(--soft);
+  font-size: 13px;
+}
+.pdf-symbols + .pdf-note {
+  margin-top: 5px;
+}
+.pdf-feedback:empty {
+  display: none;
+}
+.pdf-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+#pdf-download {
+  padding: 9px 16px;
+  border-radius: 7px;
+  background: var(--green);
+  color: white;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.pdf-render-frame {
+  position: fixed;
+  inset: 0 auto auto 0;
+  pointer-events: none;
+  opacity: 0;
+  border: 0;
+}
+.pdf-render-document .workspace {
+  display: block;
+}
+.pdf-render-document .mapcard {
+  width: 100%;
+  height: 100%;
+}
+.pdf-render-document #mapfield,
+.pdf-render-document #map-controls {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+}
+.pdf-render-document .map-toolbar,
+.pdf-render-document .map-footer,
+.pdf-render-document #settings,
+.pdf-render-document .compass {
+  display: none;
+}

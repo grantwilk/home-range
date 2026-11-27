@@ -61,4 +61,52 @@ export async function checkColdDays(page, base) {
   assert.equal(await maximum.inputValue(), "14");
   assert.equal(await hotCutoff.inputValue(), "95");
   assert.match(await page.locator("#legend-name").innerText(), /below 0°F/i);
+
+  await page.locator("#add-filter").click();
+  await page.locator("#catalog-search").fill("cold days");
+  await page.locator('[data-pick="temperatureDays"]').click();
+  const second = page.locator('[data-card="coldDays~2"]');
+  await second.locator(".cutoff").fill("10");
+  await second.locator(".cutoff").press("Enter");
+  await second.locator('.num[data-bound="max"]').fill("30");
+  await second.locator('.num[data-bound="max"]').press("Enter");
+  await second.locator("[data-eye]").click();
+  assert.match(await page.locator("#legend-name").innerText(), /below 10°F/i);
+  await page.locator("#share").click();
+  const both = await page.evaluate(() => navigator.clipboard.readText());
+  await page.goto(both);
+  await second.waitFor();
+  assert.equal(await second.locator(".cutoff").inputValue(), "10");
+  assert.equal(
+    await page.locator('[data-card="coldDays"] .cutoff').inputValue(),
+    "0",
+  );
+  assert.equal(
+    await second.locator("[data-eye]").getAttribute("aria-pressed"),
+    "true",
+  );
+  await page.locator("#export-pdf").click();
+  const coloring = page.locator("#pdf-layer");
+  assert.equal(await coloring.inputValue(), "coldDays~2");
+  assert.match(
+    await coloring.locator('option[value="coldDays"]').innerText(),
+    /below 0°F/i,
+  );
+  assert.match(
+    await coloring.locator('option[value="coldDays~2"]').innerText(),
+    /below 10°F/i,
+  );
+  await page.locator("#pdf-cancel").click();
+  await page.locator('[data-drop="coldDays"]').click();
+  assert.equal(
+    await page.locator('.filter-row[data-key="coldDays"]').count(),
+    1,
+  );
+  assert.equal(await second.locator(".cutoff").inputValue(), "10");
+  assert.match(await page.locator("#legend-name").innerText(), /below 10°F/i);
+  await second.locator("[data-drop]").click();
+  assert.equal(
+    await page.locator('.filter-row[data-key="coldDays"]').count(),
+    0,
+  );
 }
