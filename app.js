@@ -2,8 +2,8 @@ import { combine, projection } from "./spatial.js";
 import { FacilityMap } from "./facility-map.js";
 import { ReferenceMap, loadCityPoints } from "./map-reference.js";
 import { findPlaces, townDescription } from "./place-search.js";
-import { citySize } from "./facility-model.js";
 import {
+  canAddFilter,
   catalogMatches,
   entryFor,
   optionName,
@@ -12,16 +12,14 @@ import {
 } from "./filter-catalog.js";
 import { readViewUrl, writeViewUrl } from "./view-url.js";
 import { editPlaces } from "./custom-places.js";
-import {
-  coverKeys,
-  regionKeys,
-  landscapeValues,
-  landShareLabel,
-} from "./landscape.js";
+import { coverKeys, landscapeValues, landShareLabel } from "./landscape.js";
 import { countyHazards, hazardLayers } from "./hazards.js";
 import { icon } from "./icons.js";
 import {
   layers,
+  months,
+  temperatureKey,
+  temperatureStats,
   poles,
   value,
   outcome,
@@ -30,7 +28,9 @@ import {
   color,
   defaults,
   parseView,
-  usesLegacyCloud,
+  cityMetric,
+  residentsPerSquareMile,
+  usesRetiredMeasure,
   fmt,
   sliderPosition,
   metricName,
@@ -128,7 +128,7 @@ function restoreAddress() {
   viewTransform();
   refresh();
   restoringView = false;
-  if (usesLegacyCloud(raw)) syncAddress();
+  if (usesRetiredMeasure(raw)) syncAddress();
   if (
     (Array.isArray(raw?.station) && raw.station.some((f) => f?.on)) ||
     ["clear", "partlyCloudy", "cloudy", "dryDays"].includes(raw?.layer) ||
@@ -149,11 +149,6 @@ let access;
 let referenceMap;
 const filters = () => state.county;
 const metric = () => layers[state.layer];
-const cityMetric = {
-  ...citySize,
-  sliderStops: layers.population.sliderStops,
-  sliderTicks: layers.population.sliderTicks,
-};
 
 const refreshOnFrame = () => {
   cancelAnimationFrame(tick);
@@ -245,6 +240,36 @@ function syncRange(editor) {
 function subtypePicker(f, entry) {
   if (!entry.label) return "";
   const used = new Set(filters().map((card) => card.key));
+  const metric = layers[f.key];
+  if (metric.temperatureStat) {
+    const available = (key) => key === f.key || !used.has(key);
+    const monthOptions = months
+      .map((name, index) => {
+        const preferred = temperatureKey(index, metric.temperatureStat);
+        const key = available(preferred)
+          ? preferred
+          : temperatureStats
+              .map((stat) => temperatureKey(index, stat))
+              .find(available);
+        const note = !key
+          ? " (already added)"
+          : key !== preferred
+            ? ` (average ${layers[key].temperatureStat.toLowerCase()})`
+            : "";
+        return `<option value="${index}" data-measure="${key ?? ""}" ${index === metric.month ? "selected" : !key ? "disabled" : ""}>${name}${note}</option>`;
+      })
+      .join("");
+    const statOptions = temperatureStats
+      .map((stat) => {
+        const key = temperatureKey(metric.month, stat);
+        return `<option value="${stat}" data-measure="${key}" ${stat === metric.temperatureStat ? "selected" : !available(key) ? "disabled" : ""}>Average ${stat}${available(key) ? "" : " (already added)"}</option>`;
+      })
+      .join("");
+    return `<div class="temperature-fields">
+      <label class="subtype-field"><span>Month</span><select data-temperature-month data-picker="month" aria-label="Month for ${metric.name}">${monthOptions}</select></label>
+      <label class="subtype-field"><span>Measure</span><select data-temperature-stat data-picker="stat" aria-label="Temperature statistic for ${metric.name}">${statOptions}</select></label>
+      </div>`;
+  }
   const options = entry.keys
     .map((key) => {
       const selected = key === f.key;
@@ -252,7 +277,7 @@ function subtypePicker(f, entry) {
       return `<option value="${key}" ${selected ? "selected" : disabled ? "disabled" : ""}>${esc(optionName(key))}${disabled ? " (already added)" : ""}</option>`;
     })
     .join("");
-  return `<label class="subtype-field"><span>${entry.label}</span><select data-subtype aria-label="${entry.label} for ${esc(layers[f.key].name)}">${options}</select></label>`;
+  return `<label class="subtype-field"><span>${entry.label}</span><select data-subtype data-picker="subtype" aria-label="${entry.label} for ${esc(layers[f.key].name)}">${options}</select></label>`;
 }
 function layerRow(f, index) {
   const key = f.key,
@@ -286,7 +311,9 @@ function renderControls() {
     ? filters().map(layerRow).join("")
     : '<p class="empty-filters">Add a filter to explore the map.</p>';
   for (const editor of list.querySelectorAll(".editor")) syncRange(editor);
-  $("add-filter").disabled = filters().length === Object.keys(layers).length;
+  $("add-filter").disabled = !canAddFilter(
+    new Set(filters().map((f) => f.key)),
+  );
   list.scrollTop = scroll;
   if (focusName)
     list
@@ -328,9 +355,9 @@ function bindFilters() {
   });
   bindRangePointers(list);
   function change(control) {
-    if (control.matches("[data-subtype]")) {
+    if (control.matches("[data-picker]")) {
       const old = filterFor(control);
-      const key = control.value;
+      const key = control.selectedOptions[0].dataset.measure ?? control.value;
       if (filters().some((card) => card.key === key)) return;
       const replacement = changeSubtype(old, key);
       filters()[filters().indexOf(old)] = replacement;
@@ -338,7 +365,9 @@ function bindFilters() {
       renderControls();
       refresh();
       list
-        .querySelector(`[data-key="${replacement.key}"] [data-subtype]`)
+        .querySelector(
+          `[data-key="${replacement.key}"] [data-picker="${control.dataset.picker}"]`,
+        )
         .focus({ preventScroll: true });
       if (key === "custom" && !replacement.points.length)
         openPlaces(replacement);
@@ -514,7 +543,7 @@ const hazardCredit =
 const elevationCredit =
   '<a href="https://pubs.usgs.gov/of/2011/1073/">USGS &amp; NGA · GMTED2010 terrain</a>';
 const populationCredit =
-  '<a href="https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html">U.S. Census Bureau · Vintage 2025</a>';
+  '<a href="https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html">U.S. Census Bureau · Vintage 2025</a> · <a href="https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.2017.html">2017 Census land areas</a>';
 const countySources = {};
 function registerCountySource(key, source) {
   const link = `<a href="${esc(source.source)}">${esc(source.credit)}</a>`;
@@ -618,7 +647,7 @@ function addFilter() {
     refresh();
     const row = $("filters").querySelector(`[data-key="${key}"]`);
     (
-      row.querySelector("[data-subtype]") || row.querySelector("[data-view]")
+      row.querySelector("[data-picker]") || row.querySelector("[data-view]")
     ).focus();
     if (key === "custom") openPlaces(filter);
   };
@@ -639,17 +668,12 @@ function paintLegend() {
   $("legend-icon").innerHTML = icon(m.icon);
   const statistic =
     {
-      population: "Resident estimate",
+      populationDensity: "Residents per land area",
       cloudyDays: "24-hour cloud cover ≥80%",
-      desertClimate: "Share of climate-classified land",
       rainfall: "Mean annual rainfall",
       snowfall: "Mean seasonal snowfall",
     }[state.layer] ??
-    (m.landscape === "landCover"
-      ? "Share of county land"
-      : m.landscape === "ecoregion"
-        ? "Share of mapped ecological area"
-        : poles[state.layer]?.join(" → "));
+    (m.landCover ? "Share of county land" : poles[state.layer]?.join(" → "));
   $("legend-sub").textContent =
     (m.hazard
       ? "National risk percentile"
@@ -700,7 +724,7 @@ function paintLegend() {
     if (layers[key].hazard) credits.add(hazardCredit);
     else if (key === "cloudyDays") credits.add(cloudyDaysCredit);
     else if (countySources[key]) credits.add(countySources[key].credit);
-    else if (key === "population") credits.add(populationCredit);
+    else if (key === "populationDensity") credits.add(populationCredit);
     else if (key === "elevation") credits.add(elevationCredit);
     else if (crimeCredits[key]) credits.add(crimeCredits[key]);
     else {
@@ -725,7 +749,7 @@ function paintLegend() {
       showDialog("Location Sources & Downloads", entries.join(""));
     };
   const bounds =
-    state.layer === "population" || state.layer === "elevation"
+    state.layer === "populationDensity" || state.layer === "elevation"
       ? m.bins.map((n) => compactNumber.format(n))
       : m.bins;
   $("colors").innerHTML = m.colors
@@ -976,7 +1000,7 @@ function monthlyChart(values) {
         return x(j) + "," + y(low[j]);
       })
       .join(" ");
-  const months = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
+  const abbreviated = months.map((name) => name.slice(0, 3));
   return (
     '<h3>Monthly Temperatures</h3><p class="micro">Average daily high and low · °F · 1991–2020</p><svg class="monthly" role="img" aria-label="Monthly average high and low temperatures. Exact values follow." viewBox="0 0 380 130">' +
     [0, 32, 65, 100]
@@ -998,7 +1022,7 @@ function monthlyChart(values) {
     '"/><polyline fill="none" stroke="#477c87" stroke-width="2.6" points="' +
     line(low) +
     '"/>' +
-    months
+    abbreviated
       .map(
         (m, i) =>
           '<text x="' +
@@ -1009,7 +1033,7 @@ function monthlyChart(values) {
       )
       .join("") +
     '</svg><details class="month-table"><summary>Monthly Values</summary><table><thead><tr><th>Month</th><th>Low</th><th>High</th></tr></thead><tbody>' +
-    months
+    abbreviated
       .map(
         (m, i) =>
           "<tr><td>" +
@@ -1035,15 +1059,8 @@ function landscapeDetails(county, viewing) {
     .join(" · ");
   const shareRow = (key) => {
     const percent = county.values[key];
-    const period =
-      layers[key].landscape === "ecoregion"
-        ? `<small>${esc(periodFor(key, county))}</small>`
-        : "";
-    return `<li><span>${esc(layers[key].name)}${period}</span><span class="land-track" aria-hidden="true"><i style="width:${Number.isFinite(percent) ? percent : 0}%;background:${layers[key].swatch}"></i></span><b>${esc(landShareLabel(percent))}</b></li>`;
+    return `<li><span>${esc(layers[key].name)}</span><span class="land-track" aria-hidden="true"><i style="width:${percent}%;background:${layers[key].swatch}"></i></span><b>${esc(landShareLabel(percent))}</b></li>`;
   };
-  const regions = regionKeys.filter((key) =>
-    Number.isFinite(county.values[key]),
-  );
   return `<details class="month-table landscape-detail" ${viewing ? "open" : ""}>
     <summary>County Landscape${leading ? `<small>${esc(leading)}</small>` : ""}</summary>
     <h3>Land Cover</h3>${
@@ -1051,12 +1068,6 @@ function landscapeDetails(county, viewing) {
         ? `<p class="micro">${esc(periodFor(cover[0], county))} · Share of classified land, excluding open water. A particular address can have a different mix.</p>
     <ul class="land-shares">${cover.map(shareRow).join("")}</ul>`
         : "<p>No land cover data for this county.</p>"
-    }
-    <h3>Landscape Region</h3>${
-      regions.length
-        ? `<p class="micro">Prairie Parkland and Great Plains are ecological regions. Desert Climate can overlap either.</p>
-    <ul class="land-shares">${regionKeys.map(shareRow).join("")}</ul>`
-        : "<p>No landscape region data for this county.</p>"
     }
     </details>`;
 }
@@ -1066,14 +1077,14 @@ function placeDetails(uid) {
   selected = uid;
   highlight();
   const m = metric(),
-    v = p.values,
-    months =
-      "January February March April May June July August September October November December".split(
-        " ",
-      );
+    v = p.values;
   const monthName = (key) => months[v[seasonalMonths[key]] - 1] ?? "";
   const fields = Object.keys(layers).filter(
-    (k) => !layers[k].facility && !layers[k].hazard && !layers[k].landscape,
+    (k) =>
+      !layers[k].temperatureStat &&
+      !layers[k].facility &&
+      !layers[k].hazard &&
+      !layers[k].landCover,
   );
   const active = filters().filter((f) => f.on && !layers[f.key].facility);
   showDialog(
@@ -1090,7 +1101,7 @@ function placeDetails(uid) {
       '<div class="actions"><button class="secondary" id="locate-detail">' +
       icon("location", 16) +
       "Locate on Map</button></div>" +
-      landscapeDetails(p, m?.landscape) +
+      landscapeDetails(p, m?.landCover) +
       '<h3>County Profile</h3><div class="detailgrid">' +
       fields
         .map(
@@ -1100,10 +1111,13 @@ function placeDetails(uid) {
             "<b>" +
             fmt(value(p, k, state.cutoff), layers[k].unit) +
             "</b>" +
-            (k === "population" || crimeCredits[k] || countySources[k]
+            (k === "populationDensity" || crimeCredits[k] || countySources[k]
               ? layers[k].period
               : monthName(k)) +
-            (k === "population" && p.populationNote
+            (k === "populationDensity"
+              ? "<br>" + fmt(p.residents, "residents")
+              : "") +
+            (k === "populationDensity" && p.populationNote
               ? "<br>" + esc(p.populationNote)
               : "") +
             "</div>",
@@ -1505,7 +1519,6 @@ async function init() {
     hazards,
     crime,
     landCover,
-    ecoregion,
   ] = await Promise.all(
     [
       "geography",
@@ -1519,7 +1532,6 @@ async function init() {
       "hazards",
       "crime",
       "land-cover",
-      "ecoregions",
     ].map(async (name) => {
       const r = await fetch("./data/" + name + ".json");
       if (!r.ok) throw new Error(name + " HTTP " + r.status);
@@ -1527,8 +1539,6 @@ async function init() {
     }),
   );
   for (const key of landCover.keys) registerCountySource(key, landCover);
-  for (const key of ecoregion.keys)
-    registerCountySource(key, ecoregion.measures[key]);
   registerCountySource("rainfall", rainfall);
   registerCountySource("snowfall", snowfall);
   const states = new Map(g.states.map((s) => [s.id, s]));
@@ -1576,19 +1586,22 @@ async function init() {
       uid,
       name: c.name,
       populationNote: population.aggregations[c.id],
+      residents: population.counties[c.id],
       state: s.abbr,
       stateName: s.name,
       el,
       values: {
         ...risk.values,
         ...landscapeValues(landCover, c.id),
-        ...landscapeValues(ecoregion, c.id),
         ...climate.counties[c.id],
         ...humidity.counties[c.id],
         cloudyDays: cloudyDays.counties[c.id],
         rainfall: rainfall.counties[c.id],
         snowfall: snowfall.counties[c.id],
-        population: population.counties[c.id],
+        populationDensity: residentsPerSquareMile(
+          population.counties[c.id],
+          population.landAreaM2?.[c.id],
+        ),
         violentCrimeRate: crime.counties[c.id],
         homicideRate: crime.homicide[c.id],
         elevation: elevation.counties[c.id],

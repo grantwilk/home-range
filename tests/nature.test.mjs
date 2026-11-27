@@ -39,15 +39,109 @@ test("Powers Lake, the Fox River, parks and ranges use mapped geometry", () => {
   }
 });
 
-test("coastal distances follow tidal shorelines and exclude inland lakes and open water", () => {
+test("coastal distances retain bay shores and river mouths and exclude inland riverbanks", () => {
   const path = new URL("../data/nature/coast.json.gz", import.meta.url);
   const index = new NatureIndex(JSON.parse(gunzipSync(readFileSync(path))));
   // Tide gauge positions come from NOAA CO-OPS station metadata (IDs below).
   // Gauges sometimes sit on piers, so allow some distance from the mapped shore.
   // https://api.tidesandcurrents.noaa.gov/mdapi/prod/
   const anchors = [
-    ["Baltimore (8574680)", -76.57831, 39.266693, "Atlantic", 0, 0.5],
-    ["Engelhard (8653471)", -75.9888992, 35.5093994, "Atlantic", 0, 0.5],
+    // Check the mouths independently of their upstream river gauges. A mouth
+    // station can sit on a jetty or island just outside the mapped shoreline.
+    ["Saybrook Jetty (8462723)", -72.3433, 41.2633, "Atlantic", 0, 0.75],
+    ["St. Johns entrance (8720214)", -81.395, 30.3967, "Atlantic", 0, 1.5],
+    ["Savannah entrance (8670870)", -80.90303, 32.034695, "Atlantic", 0, 2.5],
+    ["The Battery (8518750)", -74.01417, 40.700554, "Atlantic", 0, 0.5],
+    ["Southwest Pass (8760959)", -89.4283, 28.9317, "Gulf", 0, 2],
+    // These gauges sit on the river. Distance is straight to the nearest
+    // coastal shore, which can be on another bay or barrier island.
+    ["Jacksonville Main Street (8720226)", -81.6583, 30.32, "Atlantic", 8, 22],
+    ["Savannah riverfront (8670681)", -81.0917, 32.0817, "Atlantic", 3, 20],
+    [
+      "Potomac at Washington (8594900)",
+      -77.021667,
+      38.873333,
+      "Atlantic",
+      15,
+      40,
+    ],
+    [
+      "Columbia at Vancouver (9440083)",
+      -122.695772,
+      45.631172,
+      "Pacific",
+      40,
+      95,
+    ],
+    // The TIGER river polygon at Essex inherits the name Long Island Sound.
+    // NOAA places the gauge on the Connecticut River, five miles from the sound.
+    ["Connecticut at Essex (8462925)", -72.385, 41.3483, "Atlantic", 3, 7],
+    // USGS station IDs identify the WGS84 locations at waterdata.usgs.gov.
+    [
+      "St. Johns near Geneva (02234000)",
+      -81.035337,
+      28.714161,
+      "Atlantic",
+      12,
+      30,
+    ],
+    [
+      "Savannah near Evans (02195520)",
+      -82.123222,
+      33.592861,
+      "Atlantic",
+      100,
+      155,
+    ],
+    [
+      "Hudson at Green Island (01358000)",
+      -73.689083,
+      42.75225,
+      "Atlantic",
+      85,
+      155,
+    ],
+    [
+      "Mississippi at Baton Rouge (07374000)",
+      -91.191556,
+      30.445667,
+      "Gulf",
+      25,
+      90,
+    ],
+    [
+      "Mississippi at New Orleans (07374510)",
+      -90.136185,
+      29.934927,
+      "Gulf",
+      3,
+      17,
+    ],
+    // The Baltimore gauge is in Northwest Harbor, upstream of the Patapsco
+    // mouth. Tolchester Beach sits directly on the Chesapeake Bay shoreline.
+    ["Baltimore (8574680)", -76.57831, 39.266693, "Atlantic", 2.5, 10],
+    ["Tolchester Beach (8573364)", -76.24455, 39.213444, "Atlantic", 0, 0.5],
+    // The Engelhard gauge sits upstream in Far Creek. The nearby mainland
+    // point lies on NOAA's charted shore along the TIGER Pamlico Sound polygon.
+    [
+      "Engelhard, Far Creek (8653471)",
+      -75.9888992,
+      35.5093994,
+      "Atlantic",
+      0.6,
+      1.8,
+    ],
+    [
+      "Pamlico Sound near Engelhard",
+      -75.976883,
+      35.489708,
+      "Atlantic",
+      0,
+      0.25,
+    ],
+    // NOAA charted shoreline beside the TIGER polygon named Green Island Sound.
+    // Census classifies this sound as H3010, the same code used for inland rivers.
+    ["Green Island Sound, Georgia", -81.098916, 31.894525, "Atlantic", 0, 0.25],
     ["Bremerton (9445958)", -122.623, 47.5617, "Pacific", 0, 0.5],
     ["Pensacola (8729840)", -87.2112, 30.4044, "Gulf", 0, 0.5],
     ["Duck ocean pier (8651370)", -75.7467, 36.1833, "Atlantic", 0, 0.5],

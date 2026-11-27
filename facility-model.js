@@ -32,7 +32,7 @@ const catalog = {
   ],
   coast: [
     "Distance to the Coast & Great Lakes",
-    "Straight-line miles to a mapped U.S. shoreline, including ocean coasts, bays, sounds, tidal riverbanks, and the Great Lakes.",
+    "Straight-line miles to the nearest ocean, bay, sound, or Great Lakes shore. Along rivers, the coastal shore ends near the mapped mouth.",
     25,
     "Shoreline",
   ],

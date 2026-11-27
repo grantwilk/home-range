@@ -14,9 +14,9 @@ The prototype review found that small counties were hard to select on a phone an
 
 ## County Landscape Design
 
-The design review used three searches to choose the geographic measures. A farms-and-woods search needs both shares in the same county, so the filter stores the full land-cover mix and allows one card per class. A prairie search needs both current grass cover and regional context, since cropland can occupy former prairie. A desert search needs a climate classification, since bare rock, sand, and sparse vegetation also occur outside deserts. Address-level proximity would require a different calculation from each home to a mapped feature.
+A farms-and-woods search needs both shares in the same county, so the filter stores the full land-cover mix and allows one card per class. Address-level proximity would require a different calculation from each home to a mapped feature.
 
-The source review selected native 30 m NLCD cells for visible land cover, Forest Service EcoMap divisions for Prairie Parkland and the Great Plains, and historical Köppen–Geiger climate classes for hot and cold desert. The map keeps the source year with each measure. The county calculations remove open water from the land-cover denominator and preserve trace values at the ends of the scale. Independent checks compared farm, forest, developed, and grassland shares in eight counties against the MRLC county reports. [Land Cover and Region Methods](README.md#county-landscapes) · [MRLC County Reports](https://www.mrlc.gov/eva/)
+The source review selected native 30 m NLCD cells for visible land cover. The map keeps the source year with each measure. The county calculations remove open water from the land-cover denominator and preserve trace values at the ends of the scale. Independent checks compared farm, forest, developed, and grassland shares in eight counties against the MRLC county reports. [Land Cover Methods](README.md#county-landscapes) · [MRLC County Reports](https://www.mrlc.gov/eva/)
 
 ## Release Checks
 

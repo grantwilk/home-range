@@ -72,12 +72,12 @@ test("existing hash links load, explicit query filters take precedence and bad r
   original.county[0].on = true;
   const hash = "#view=" + encodeURIComponent(JSON.stringify(original));
   assert.deepEqual(read("?tag=mail" + hash), original);
-  const current = read("?population=10..20" + hash);
-  assert.deepEqual(current.county, [f("population", 10, 20)]);
+  const current = read("?populationDensity=10..20" + hash);
+  assert.deepEqual(current.county, [f("populationDensity", 10, 20)]);
   const url = writeViewUrl(base + hash, original, [1, 0, 0]);
   assert.equal(url.hash, "");
   const warnings = [];
-  const partial = read("?population=100..&janLow=-1..0", (m) =>
+  const partial = read("?populationDensity=100..&janLow=-1..0", (m) =>
     warnings.push(m),
   );
   assert.equal(partial.county[0].on, false);
@@ -208,4 +208,42 @@ test("an explicit days range wins over any legacy percentage, whether active or 
       assert.match(warnings[0], /saved Cloudy Days range/);
     }
   }
+});
+
+test("links drop removed regional criteria and preserve other filter ranges", () => {
+  const old = new URL(
+    "?plainsRegion=50..100&grassCover=60..100&desertClimate=0..0&layer=plainsRegion",
+    base,
+  );
+  const state = read(old);
+  assert.deepEqual(state.county, [f("grassCover", 60, 100)]);
+  assert.equal(state.layer, "grassCover");
+  const shared = writeViewUrl(old, state, [1, 0, 0]);
+  assert.equal(shared.searchParams.has("plainsRegion"), false);
+  assert.equal(shared.searchParams.has("desertClimate"), false);
+  assert.deepEqual(read("?layer=prairieRegion").county, []);
+});
+
+test("population totals never become density bounds in a shared view", () => {
+  for (const link of [
+    "?population=10000..50000&layer=population",
+    "?layer=population",
+  ]) {
+    const warnings = [];
+    const state = read(link, (m) => warnings.push(m));
+    assert.equal(state.layer, "populationDensity");
+    assert.deepEqual(
+      state.county.find((f) => f.key === state.layer),
+      freshFilter("populationDensity"),
+    );
+    assert.match(warnings.join(" "), /paused/);
+    const next = writeViewUrl(new URL(link, base), state, [1, 0, 0]);
+    assert.equal(next.searchParams.has("population"), false);
+  }
+  const mixed = read(
+    "?population=100..500&populationDensity=0.01..0.03&match=any&layer=population",
+    () => {},
+  );
+  assert.deepEqual(mixed.county, [f("populationDensity", 0.01, 0.03)]);
+  assert.equal(mixed.mode, "any");
 });

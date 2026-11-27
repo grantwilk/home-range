@@ -75,15 +75,6 @@ class LandCoverTests(unittest.TestCase):
             self.assertEqual(row("mixed"), [40, 40, 0, 0, 0, 0, 0, 20, None])
             self.assertEqual(row("developed")[3], 100)
             self.assertIsNone(row("missing"))
-            # A regional layer may use the same footprint and land/water mask.
-            overlaid = cover.county_counts(
-                path,
-                frame,
-                workers=1,
-                stride=2,
-                classify=lambda src, window, cells: (cells == 11).astype("uint8"),
-            )
-            self.assertEqual(overlaid["mixed"][0].tolist(), [5, 1])
 
     def test_geography_and_independent_raster_samples(self):
         data = json.loads(cover.OUTPUT.read_text())

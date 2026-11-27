@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 
+export const calendarMonths =
+  "January February March April May June July August September October November December".split(
+    " ",
+  );
+
 // Add a family through the picker, then choose its measure on the new card.
 // Existing siblings can have independently edited ranges and must survive.
 export async function pickMeasure(page, family, key) {
@@ -9,7 +14,16 @@ export async function pickMeasure(page, family, key) {
   await page.locator(`[data-pick="${family}"]`).click();
   const added = (await keys()).filter((value) => !before.includes(value));
   assert.equal(added.length, 1, `Adding ${family} should insert one card`);
-  if (added[0] !== key) {
+  if (added[0] !== key && family === "temperature") {
+    const month = calendarMonths.findIndex(
+      (name) => name.slice(0, 3).toLowerCase() === key.slice(0, 3),
+    );
+    assert.ok(month >= 0, `Unknown month in ${key}`);
+    // Changing the month replaces the card's key, but keeps its position.
+    const card = rows.nth((await keys()).indexOf(added[0]));
+    await card.locator("[data-temperature-month]").selectOption(String(month));
+    await card.locator("[data-temperature-stat]").selectOption(key.slice(3));
+  } else if (added[0] !== key) {
     await page
       .locator(`.filter-row[data-key="${added[0]}"] [data-subtype]`)
       .selectOption(key);

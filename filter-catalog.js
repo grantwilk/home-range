@@ -1,7 +1,7 @@
 // A catalog entry groups interchangeable measures. Each card and shared URL
 // keeps its concrete measure key so several hazards or place types can coexist.
-import { coverKeys, regionKeys } from "./landscape.js";
-import { layers, freshFilter } from "./model.js";
+import { coverKeys } from "./landscape.js";
+import { layers, freshFilter, monthlyTemperatureKeys } from "./model.js";
 
 const single = (key, description, searchTerms) => ({
   id: key,
@@ -17,9 +17,9 @@ export const catalog = [
       {
         id: "temperature",
         name: "Temperature",
-        label: "Measure",
-        description: "Average daily highs and lows by month.",
-        keys: ["janLow", "julHigh", "coldLow", "hotHigh"],
+        label: "Month",
+        description: "Choose a month and its average daily low or high.",
+        keys: monthlyTemperatureKeys,
       },
       {
         id: "humidity",
@@ -58,9 +58,9 @@ export const catalog = [
     name: "Population & Nearby Places",
     entries: [
       single(
-        "population",
-        "Number of people living in a county.",
-        "people populous residents",
+        "populationDensity",
+        "Residents per square mile of county land.",
+        "people populous residents rural urban crowded density",
       ),
       {
         id: "crime",
@@ -103,16 +103,6 @@ export const catalog = [
         keys: coverKeys,
         independentRanges: true,
       },
-      {
-        id: "ecoregion",
-        name: "Landscape Region",
-        label: "Region Type",
-        description:
-          "Find Prairie Parkland, the Great Plains, or land with a desert climate.",
-        searchTerms: "biome ecoregion",
-        keys: regionKeys,
-        independentRanges: true,
-      },
       single(
         "elevation",
         "Average height above sea level, in feet.",
@@ -149,7 +139,17 @@ const byMeasure = new Map(
     group.entries.flatMap((entry) => entry.keys.map((key) => [key, entry])),
   ),
 );
-export const entryFor = (key) => byMeasure.get(key);
+// These county-specific seasonal measures can still be displayed from earlier shares.
+const seasonalTemperatures = new Map(
+  ["coldLow", "hotHigh"].map((key) => [
+    key,
+    single(key, layers[key].description),
+  ]),
+);
+export const entryFor = (key) =>
+  byMeasure.get(key) ?? seasonalTemperatures.get(key);
+export const canAddFilter = (used) =>
+  [...byMeasure.keys()].some((key) => !used.has(key));
 
 export function optionName(key) {
   if (key === "coast") return "Coast & Great Lakes";

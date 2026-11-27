@@ -17,6 +17,11 @@ class PopulationTests(unittest.TestCase):
         }
         self.assertEqual(snapshot["period"], "July 1, 2025")
         self.assertEqual(counties.keys(), map_ids)
+        areas = snapshot["landAreaM2"]
+        self.assertEqual(areas.keys(), map_ids)
+        self.assertTrue(all(type(area) is int and area > 0 for area in areas.values()))
+        self.assertEqual(areas["09001"], 1_618_664_433)
+        self.assertEqual(areas["02261"], 88_635_832_004)
         self.assertEqual(snapshot["coverage"], 3142)
         self.assertEqual(
             set(snapshot["aggregations"]),

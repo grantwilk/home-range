@@ -11,25 +11,50 @@ import json
 import urllib.request
 from collections import Counter
 from pathlib import Path
+from zipfile import ZipFile
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 BASE = "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/"
 COUNTY = BASE + "counties/totals/co-est2025-alldata.csv"
 TOWNS = BASE + "cities/totals/sub-est2025_9.csv"
 CROSSWALK = "https://www2.census.gov/geo/docs/reference/ct_change/ct_cou_to_cousub_crosswalk.txt"
+GAZETTEER = "https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2017_Gazetteer/2017_Gaz_counties_national.zip"
 HASHES = {
+    GAZETTEER: "919aa22b692596d140ca435002f4010a65a4311e77909cd3ed0f3e01e48ba580",
     COUNTY: "4f5a499d851e2cb48fd7a5405e5a9235453a8a66933657aacd10df0e264f35d5",
     TOWNS: "207ca066573e67abd2b1d654fc39ee3ba915387ef7e6d3902389cbdc389ce757",
     CROSSWALK: "13ad002564e30e6dcd1df112fdaa985f2cd0cdb908f7f3017cd2723db294cff8",
 }
 
 
-def read_source(url, encoding="latin1", delimiter=","):
+def verified_bytes(url):
     with urllib.request.urlopen(url, timeout=60) as source:
         raw = source.read()
     if hashlib.sha256(raw).hexdigest() != HASHES[url]:
         raise ValueError(f"Census source changed. Review before rebuilding: {url}")
-    return csv.DictReader(io.StringIO(raw.decode(encoding)), delimiter=delimiter)
+    return raw
+
+
+def read_source(url, encoding="latin1", delimiter=","):
+    return csv.DictReader(
+        io.StringIO(verified_bytes(url).decode(encoding)), delimiter=delimiter
+    )
+
+
+def land_areas(ids):
+    with ZipFile(io.BytesIO(verified_bytes(GAZETTEER))) as archive:
+        rows = archive.read("2017_Gaz_counties_national.txt").decode("latin1")
+    areas = {}
+    for row in csv.DictReader(io.StringIO(rows), delimiter="\t"):
+        code = row["GEOID"]
+        if code in ids:
+            area = int(row["ALAND"])
+            if area <= 0 or code in areas:
+                raise ValueError(f"Invalid or duplicate county land area: {code}")
+            areas[code] = area
+    if areas.keys() != ids:
+        raise ValueError("Missing land area for a mapped county")
+    return dict(sorted(areas.items()))
 
 
 def estimates(rows, level, code_fields):
@@ -101,6 +126,8 @@ def main():
         "credit": "U.S. Census Bureau, Population Estimates Program, Vintage 2025",
         "source": "https://www.census.gov/data/datasets/time-series/demo/popest/2020s-counties-total.html",
         "sourceFile": COUNTY,
+        "landAreaSource": GAZETTEER,
+        "landAreaM2": land_areas(population.keys()),
         "variable": "POPESTIMATE2025",
         "townEstimates": TOWNS,
         "townCrosswalk": CROSSWALK,

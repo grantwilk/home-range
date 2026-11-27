@@ -1,6 +1,7 @@
 import { landscapeLayers, landShareLabel } from "./landscape.js";
 import { hazardLayers } from "./hazards.js";
 import {
+  citySize,
   facilityLayers,
   facilityOptions,
   restoreFacility,
@@ -42,12 +43,30 @@ const crimeColors = [
   "#744454",
 ];
 const climate = "1991–2020";
-// Keep rural and urban limits easy to reach with round steps in each decade.
-const populationStops = [0];
-for (const step of [10, 100, 1_000, 10_000, 100_000]) {
-  for (let n = populationStops.at(-1) + step; n <= step * 100; n += step) {
-    populationStops.push(n);
+// Each successive decade occupies a similar amount of slider travel.
+function graduatedStops(steps) {
+  const stops = [0];
+  for (const step of steps) {
+    for (let i = stops.length === 1 ? 1 : 11; i <= 100; i++)
+      stops.push(Number((i * step).toFixed(2)));
   }
+  return stops;
+}
+export const cityMetric = {
+  ...citySize,
+  sliderStops: graduatedStops([10, 100, 1_000, 10_000, 100_000]),
+  sliderTicks: [0, 1_000, 10_000, 100_000, 1_000_000, 10_000_000],
+};
+const densityStops = graduatedStops([0.01, 0.1, 1, 10, 100, 1000]);
+export function residentsPerSquareMile(residents, landAreaM2) {
+  if (
+    !Number.isFinite(residents) ||
+    residents < 0 ||
+    !Number.isFinite(landAreaM2) ||
+    landAreaM2 <= 0
+  )
+    return null;
+  return Math.round(((residents * 1609.344 ** 2) / landAreaM2) * 100) / 100;
 }
 const layer = (
   name,
@@ -82,27 +101,37 @@ function seasonalHumidity(season) {
     [0, 100],
   );
 }
+export const months =
+  "January February March April May June July August September October November December".split(
+    " ",
+  );
+export const temperatureStats = ["Low", "High"];
+export const temperatureKey = (month, stat) =>
+  months[month].slice(0, 3).toLowerCase() + stat;
+const monthlyTemperatures = Object.fromEntries(
+  temperatureStats.flatMap((stat) =>
+    months.map((name, month) => [
+      temperatureKey(month, stat),
+      {
+        ...layer(
+          `Average ${name} ${stat}`,
+          "°F",
+          stat === "Low" ? "thermo" : "sun",
+          climate,
+          `Average daily ${stat.toLowerCase()} temperature across the county in ${name} (1991–2020).`,
+          [0, 20, 32, 50, 70, 90],
+          thermal,
+          [-60, 115],
+        ),
+        month,
+        temperatureStat: stat,
+      },
+    ]),
+  ),
+);
+export const monthlyTemperatureKeys = Object.keys(monthlyTemperatures);
 export const layers = {
-  janLow: layer(
-    "Average January Low",
-    "°F",
-    "thermo",
-    climate,
-    "Average daily low temperature across the county in January.",
-    [0, 10, 20, 30, 40, 50],
-    thermal,
-    [-60, 75],
-  ),
-  julHigh: layer(
-    "Average July High",
-    "°F",
-    "sun",
-    climate,
-    "Average daily high temperature across the county in July.",
-    [65, 70, 75, 80, 85, 90],
-    thermal,
-    [40, 115],
-  ),
+  ...monthlyTemperatures,
   coldLow: layer(
     "Coldest-Month Average Low",
     "°F",
@@ -204,20 +233,20 @@ export const layers = {
     ),
     step: 1,
   },
-  population: {
+  populationDensity: {
     ...layer(
-      "County Population",
-      "residents",
+      "County Population Density",
+      "people/mi²",
       "people",
       "July 1, 2025",
-      "Estimated number of residents in the entire county on July 1, 2025.",
-      [10_000, 50_000, 100_000, 500_000, 1_000_000],
+      "Residents per square mile of land. Lower values indicate more sparsely populated counties. Water is excluded.",
+      [10, 50, 250, 1000, 5000],
       ["#e4e7f0", "#c6cde3", "#a7aed1", "#868abc", "#675fa2", "#493c7f"],
-      [populationStops[0], populationStops.at(-1)],
+      [0, densityStops.at(-1)],
     ),
-    step: 1,
-    sliderStops: populationStops,
-    sliderTicks: [0, 1_000, 10_000, 100_000, 1_000_000, 10_000_000],
+    step: 0.01,
+    sliderStops: densityStops,
+    sliderTicks: [0, 1, 10, 100, 1000, 10000, 100000],
   },
   violentCrimeRate: layer(
     "Reported Violent Crime Rate",
@@ -249,10 +278,15 @@ export const poles = {
   wetDays: ["Drier", "Wetter"],
 };
 export function value(place, key, cutoff = 90) {
-  const x =
-    key === "heatDays"
-      ? place.values?.heatDays?.[cutoff - 60]
-      : place.values?.[key];
+  const readings = place.values;
+  const metric = layers[key];
+  let x = readings?.[key];
+  if (metric?.temperatureStat) {
+    const series = readings?.["monthly" + metric.temperatureStat];
+    if (series) x = series[metric.month];
+  } else if (key === "heatDays") {
+    x = readings?.heatDays?.[cutoff - 60];
+  }
   return Number.isFinite(x) ? x : null;
 }
 // Exact inputs and shared links retain the full count between slider stops.
@@ -349,8 +383,7 @@ function readRange(input, warnings) {
     ["min", "max"].includes(input.op) &&
     Number.isFinite(input.limit)
   ) {
-    // Old population links rounded to whole residents. Other one-sided limits
-    // fall inward to the next representable observation (one decimal place).
+    // Whole-number measures round legacy bounds. Finer bounds fall inward.
     const limit = clamp(input.limit);
     const round =
       scale === 1 ? Math.round : input.op === "min" ? Math.ceil : Math.floor;
@@ -408,25 +441,30 @@ function mergeRanges(ranges, mode, warnings) {
   return { ...first, min: sorted[0].min, max };
 }
 
-// A link may include every current measure and the retired cloud layer.
-const linkedFilterLimit = Math.max(48, Object.keys(layers).length + 1);
-const oldCloud = "cloud";
-const dayCloud = "cloudyDays";
+// A threshold cannot carry across a change of units.
+const replacements = new Map([
+  ["cloud", "cloudyDays"],
+  ["population", "populationDensity"],
+]);
+const linkedFilterLimit = Math.max(
+  48,
+  Object.keys(layers).length + replacements.size,
+);
+export const retiredMeasure = (key) => replacements.has(key);
 function linkedLayer(raw) {
   return typeof raw.layer === "string" &&
-    (raw.layer === oldCloud || Object.hasOwn(layers, raw.layer))
+    (retiredMeasure(raw.layer) || Object.hasOwn(layers, raw.layer))
     ? raw.layer
     : raw.views?.county;
 }
-
-export function usesLegacyCloud(raw) {
+export function usesRetiredMeasure(raw) {
   return Boolean(
     raw &&
-    (linkedLayer(raw) === oldCloud ||
+    (retiredMeasure(linkedLayer(raw)) ||
       (Array.isArray(raw.county) &&
         raw.county
           .slice(0, linkedFilterLimit)
-          .some((f) => f?.key === oldCloud))),
+          .some((f) => retiredMeasure(f?.key)))),
   );
 }
 
@@ -436,11 +474,11 @@ export function parseView(raw, warn = () => {}) {
   const warnings = new Set();
   state.mode = (raw.mode ?? raw.modes?.county) === "any" ? "any" : "all";
   if (validCutoff(raw.cutoff)) state.cutoff = raw.cutoff;
-  const migrateCloud = usesLegacyCloud(raw);
+  const migrated = new Set();
   const linked = Array.isArray(raw.county)
     ? raw.county.slice(0, linkedFilterLimit)
     : [];
-  const savedDays = linked.some((f) => f?.key === dayCloud);
+  const linkedKeys = new Set(linked.map((f) => f?.key));
   if (Array.isArray(raw.county)) {
     const grouped = new Map();
     if (raw.county.length > linkedFilterLimit)
@@ -448,9 +486,11 @@ export function parseView(raw, warn = () => {}) {
         `Only the first ${linkedFilterLimit} linked filters were restored.`,
       );
     for (const input of linked) {
-      if (migrateCloud && input?.key === oldCloud) {
-        if (!savedDays && !grouped.has(dayCloud))
-          grouped.set(dayCloud, [freshFilter(dayCloud)]);
+      if (retiredMeasure(input?.key)) {
+        const key = replacements.get(input.key);
+        migrated.add(input.key);
+        if (!linkedKeys.has(key) && !grouped.has(key))
+          grouped.set(key, [freshFilter(key)]);
         continue;
       }
       if (
@@ -469,20 +509,27 @@ export function parseView(raw, warn = () => {}) {
     );
   }
   let desired = linkedLayer(raw);
-  if (migrateCloud) {
-    if (desired === oldCloud) {
-      desired = dayCloud;
-      if (state.county.length && !state.county.some((f) => f.key === dayCloud))
-        state.county.push(freshFilter(dayCloud));
-    }
-    if (state.county.some((f) => f.key === dayCloud)) {
-      warnings.add(
-        savedDays
-          ? "This link referenced the former cloud-frequency percentage. Its saved Cloudy Days range and switch setting have been kept."
-          : "This link used daytime cloud frequency (%). Cloudy Days measures days per year. Its filter is paused at the full range so you can choose new limits.",
-      );
-    }
+  if (retiredMeasure(desired)) {
+    migrated.add(desired);
+    desired = replacements.get(desired);
+    if (state.county.length && !state.county.some((f) => f.key === desired))
+      state.county.push(freshFilter(desired));
   }
+  if (migrated.has("cloud") && state.county.some((f) => f.key === "cloudyDays"))
+    warnings.add(
+      linkedKeys.has("cloudyDays")
+        ? "This link referenced the former cloud-frequency percentage. Its saved Cloudy Days range and switch setting have been kept."
+        : "This link used daytime cloud frequency (%). Cloudy Days measures days per year. Its filter is paused at the full range so you can choose new limits.",
+    );
+  if (
+    migrated.has("population") &&
+    state.county.some((f) => f.key === "populationDensity")
+  )
+    warnings.add(
+      linkedKeys.has("populationDensity")
+        ? "This link included a county population total. Its saved population density range and switch setting have been kept."
+        : "This link used total residents. Population density measures people per square mile of land. Its filter is paused so you can choose a new range.",
+    );
   state.layer = state.county.some((f) => f.key === desired)
     ? desired
     : (state.county[0]?.key ?? null);
@@ -493,7 +540,8 @@ export const fmt = (v, unit) =>
   v === null
     ? "No data"
     : v.toLocaleString("en-US", {
-        maximumFractionDigits: unit === "/ 100" ? 2 : 1,
+        maximumFractionDigits:
+          unit === "/ 100" || unit === "people/mi²" ? 2 : 1,
       }) + (unit === "°F" ? "°F" : unit === "%" ? "%" : " " + unit);
 export const metricName = (key, cutoff) =>
   key === "heatDays" ? "Days at or Above " + cutoff + "°F" : layers[key].name;
@@ -501,7 +549,7 @@ export const metricName = (key, cutoff) =>
 export function countyReading(place, key, cutoff) {
   if (!place) return "No county data";
   const score = value(place, key, cutoff);
-  if (layers[key].landscape) return landShareLabel(score);
+  if (layers[key].landCover) return landShareLabel(score);
   if (!layers[key].hazard) return fmt(score, layers[key].unit);
   const rating = place.hazardRatings?.[key];
   if (!rating) return "No matching county boundary";

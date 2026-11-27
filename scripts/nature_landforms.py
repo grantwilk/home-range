@@ -5,15 +5,14 @@
 """Rebuild coastline and mountain-range layers with uv run scripts/nature_landforms.py."""
 
 import argparse
-import hashlib
-import shutil
 import tempfile
-import urllib.request
 from pathlib import Path
 
 import geopandas as gpd
 import shapely
-from nature_data import write_layer
+from coastal_water import read_marine_water
+from marine_shoreline import clip_to_marine_water
+from nature_data import verified_file, write_layer
 from shapely.geometry import box
 
 COAST_URL = (
@@ -49,6 +48,16 @@ SOURCES = {
         "3e81cbb6cf5f60d9b01ef3e730afa14d61ce5f784252a0b33a696135e71447bc",
     ),
 }
+SALINITY_URL = (
+    "https://www.ncei.noaa.gov/data/oceans/archive/arc0074/0127396/1.1/data/0-data/"
+    "edited_shapefiles_Apr17_2015/edited_shapefiles/united_states_salinity_3_zones"
+)
+SALINITY_CHECKSUMS = {
+    "dbf": "af304ab1b81ba930e2d3a59111fc80af2ca6ee1cf8ea0366663866cc97042f67",
+    "prj": "84cf5b9a3c1a444f83ac30ff76f8c5035990223027ba69b2f4d628388adcbd65",
+    "shp": "7e37032eb655526cedff03be4c4cbf880fe6f5312d69e3238dd8c591738acfdb",
+    "shx": "d820ff72d0dfaafafd04be64adf556d0b53a301da32243b04ea3f3d1f776e63e",
+}
 COAST_NAMES = {
     "Atlantic": "Atlantic shoreline",
     "Gulf": "Gulf shoreline",
@@ -57,13 +66,14 @@ COAST_NAMES = {
     "Great Lakes": "Great Lakes shoreline",
 }
 COAST_DEFINITION = (
-    "Straight-line distance to mapped U.S. shoreline. In the contiguous coastal "
-    "states, NOAA charted shores include bays, sounds, inlets, tidal rivers and "
-    "islands. Only captured shoreline arcs are included; invented chart closures "
-    "and estimated joins are excluded. The 1998 NOAA compilation represents 1988–1992 "
-    "chart coverage. Changing deltas, eroding coasts and recent construction can differ "
-    "today. Alaska, Hawaii and all five Great Lakes retain the 2025 Census coastline, "
-    "with less detail in some inlets. Shores may be rocky, marshy or private."
+    "Straight-line miles to the nearest mapped ocean, bay, sound or Great Lakes shore. "
+    "In the contiguous states, 2025 Census marine water areas identify where NOAA’s "
+    "charted shoreline meets ocean-connected bays and sounds. NOAA’s mapped estuaries "
+    "corroborate waters with conflicting river and bay labels. A 250-meter allowance "
+    "aligns the two maps near shore. Riverbanks end near mapped mouths. "
+    "Local salinity varies with tides and river flow. The NOAA shoreline was compiled "
+    "in 1998 from 1988–1992 charts. Alaska, Hawaii and the Great Lakes use the "
+    "2025 Census coastline."
 )
 MOUNTAIN_DEFINITION = (
     "Straight-line distance to the U.S. portion of a named mountain-range footprint "
@@ -75,31 +85,16 @@ MOUNTAIN_DEFINITION = (
 
 
 def source(cache, key):
-    url, checksum = SOURCES[key]
-    dest = cache / f"{key}.zip"
-    if not dest.exists():
-        with tempfile.NamedTemporaryFile(dir=cache, delete=False) as tmp:
-            name = Path(tmp.name)
-        try:
-            with (
-                urllib.request.urlopen(url, timeout=120) as response,
-                name.open("wb") as out,
-            ):
-                shutil.copyfileobj(response, out)
-            with name.open("rb") as inp:
-                if hashlib.file_digest(inp, "sha256").hexdigest() != checksum:
-                    raise ValueError(f"Unexpected download checksum for {url}")
-            name.replace(dest)
-        finally:
-            name.unlink(missing_ok=True)
-    else:
-        with dest.open("rb") as inp:
-            if hashlib.file_digest(inp, "sha256").hexdigest() != checksum:
-                raise ValueError(f"Source checksum changed: {dest}")
-    return dest
+    return verified_file(cache / f"{key}.zip", *SOURCES[key])
 
 
-def coast_features(chart_path, census_path, legal_path, states):
+def read_estuary_zones(cache):
+    for ext, checksum in SALINITY_CHECKSUMS.items():
+        verified_file(cache / f"salinity.{ext}", f"{SALINITY_URL}.{ext}", checksum)
+    return gpd.read_file(cache / "salinity.shp", columns=["SZ_CODE", "EST_NAME"])
+
+
+def coast_features(chart_path, census_path, legal_path, water, estuary_zones, states):
     # TIGER state boundaries extend into territorial waters, unlike cartographic
     # state outlines trimmed to the coast. Clip existing lines; never construct
     # shore by taking the boundary of a clipped polygon.
@@ -133,11 +128,10 @@ def coast_features(chart_path, census_path, legal_path, states):
     if not set(chart.REGIONS).issubset(names) or set(chart.S_ARC_CODE) != {1}:
         raise ValueError("Unexpected NOAA shoreline classes")
     inside = shapely.covers(country, chart.geometry.array)
-    for row, whole in zip(chart.itertuples(), inside, strict=True):
-        yield (
-            names[row.REGIONS],
-            row.geometry if whole else row.geometry.intersection(country),
-        )
+    chart = chart.copy()
+    chart.loc[~inside, "geometry"] = chart.geometry[~inside].intersection(country)
+    for row in clip_to_marine_water(chart, water, estuary_zones).itertuples():
+        yield names[row.REGIONS], row.geometry
 
     census = gpd.read_file(census_path, columns=["NAME", "MTFCC"]).to_crs(4326)
     if set(census.MTFCC) != {"L4150"}:
@@ -206,11 +200,13 @@ def main():
                 source(args.cache, "shoreline"),
                 source(args.cache, "coast"),
                 source(args.cache, "legal-states"),
+                read_marine_water(args.cache),
+                read_estuary_zones(args.cache),
                 states,
             ),
-            source="NOAA National Ocean Service, Medium Resolution Digital Vector Shoreline; U.S. Census Bureau, TIGER/Line",
+            source="NOAA National Ocean Service, Medium Resolution Digital Vector Shoreline and Estuarine Salinity Zones; U.S. Census Bureau, TIGER/Line Area Hydrography and Coastline",
             url="https://shoreline.noaa.gov/med-res.html",
-            period="1998 NOAA compilation · 2025 TIGER/Line",
+            period="1998 shoreline · 1999 estuarine zones · 2025 TIGER/Line",
             definition=COAST_DEFINITION,
             geometry="line",
         )

@@ -106,13 +106,7 @@ def land_percentages(counts, polygon_pixels, alaska):
     return shares
 
 
-def county_counts(raster, counties, workers=4, *, classify=None, stride=STRIDE):
-    """Histogram native cells by county; optional classifier returns dense category indices.
-
-    classify(src, window, cells) can overlay another classification on the NLCD land
-    mask. The returned count vectors include every cell whose center fell inside
-    the relevant footprint, including separately classified missing/water cells.
-    """
+def county_counts(raster, counties, workers=4):
     with rasterio.open(raster) as src:
         if (
             src.res != (30, 30)
@@ -128,10 +122,10 @@ def county_counts(raster, counties, workers=4, *, classify=None, stride=STRIDE):
     ids = pieces.index.get_level_values(0).to_numpy() + 1
     tree = pieces.sindex
     block = 2048
-    label_dtype = np.min_scalar_type((len(polys) + 1) * stride - 1)
+    label_dtype = np.min_scalar_type((len(polys) + 1) * STRIDE - 1)
 
     def stripe(y):
-        counts = np.zeros((len(polys) + 1, stride), dtype=np.int64)
+        counts = np.zeros((len(polys) + 1, STRIDE), dtype=np.int64)
         with rasterio.open(raster) as src:
             for x in range(0, width, block):
                 window = Window(x, y, min(block, width - x), min(block, height - y))
@@ -142,24 +136,12 @@ def county_counts(raster, counties, workers=4, *, classify=None, stride=STRIDE):
                 cells = src.read(1, window=window)
                 # Each 30 m square contributes by its centre. County 0 is outside.
                 labels = rasterize(
-                    [(shapes[i], int(ids[i]) * stride) for i in selected],
+                    [(shapes[i], int(ids[i]) * STRIDE) for i in selected],
                     out_shape=cells.shape,
                     transform=src.window_transform(window),
                     dtype=label_dtype,
                 )
-                if classify is None:
-                    labels += LOOKUP[cells]
-                else:
-                    classes = classify(src, window, cells)
-                    if (
-                        classes.shape != cells.shape
-                        or classes.dtype.kind != "u"
-                        or classes.max() >= stride
-                    ):
-                        raise ValueError(
-                            "Expected one unsigned class index per source cell"
-                        )
-                    labels += classes
+                labels += LOOKUP[cells]
                 counts += np.bincount(labels.ravel(), minlength=counts.size).reshape(
                     counts.shape
                 )
@@ -167,7 +149,7 @@ def county_counts(raster, counties, workers=4, *, classify=None, stride=STRIDE):
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         counts = sum(pool.map(stripe, range(0, height, block)))
-    if classify is None and counts[1:, UNKNOWN].any():
+    if counts[1:, UNKNOWN].any():
         raise ValueError("An unrecognized NLCD class occurred in a county")
     return {
         r.GEOID: (counts[i + 1], r.geometry.area / 900) for i, r in polys.iterrows()

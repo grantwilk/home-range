@@ -1,6 +1,10 @@
 // Run against the release bundle nested under a project path, as on GitHub Pages.
 import { projection } from "../spatial.js";
-import { checkCatalogLayout, pickMeasure } from "./catalog-browser.mjs";
+import {
+  calendarMonths,
+  checkCatalogLayout,
+  pickMeasure,
+} from "./catalog-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
 import { checkPdfExport } from "./pdf-browser.mjs";
@@ -269,7 +273,6 @@ async function checkLandscape(page, base) {
   for (const [term, family, key, bound, amount] of [
     ["farms", "landCover", "farmCover", "min", "30"],
     ["buildings", "landCover", "developedCover", "max", "20"],
-    ["desert", "ecoregion", "desertClimate", "max", "0"],
   ]) {
     await page.locator("#add-filter").click();
     await page.locator("#catalog-search").fill(term);
@@ -284,7 +287,7 @@ async function checkLandscape(page, base) {
   await page.waitForURL(
     (url) =>
       url.searchParams.get("layer") === "farmCover" &&
-      url.searchParams.get("desertClimate") === "0..0",
+      url.searchParams.get("developedCover") === "0..20",
   );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
@@ -294,14 +297,14 @@ async function checkLandscape(page, base) {
     "Crops & Pasture",
   );
   assert.match(await page.locator("#legend-sub").innerText(), /county land/);
-  assert.equal(await page.locator(".filter-row[data-key]").count(), 3);
+  assert.equal(await page.locator(".filter-row[data-key]").count(), 2);
   await page.locator("#search").click();
   await page.locator("#query").fill("55025");
   await page.locator('#suggest [data-place="c55025"]').click();
   const detail = page.locator(".landscape-detail[open]");
   await detail.waitFor();
   assert.match(await detail.innerText(), /Crops & Pasture/);
-  assert.match(await detail.innerText(), /Prairie Parkland/);
+  assert.equal(await detail.locator("ul").count(), 1);
   const shares = await detail
     .locator("ul")
     .first()
@@ -736,14 +739,13 @@ try {
       "distance",
       "nature",
       "landCover",
-      "ecoregion",
       "hazard",
       "heatDays",
       "wetDays",
       "annualPrecipitation",
       "cloudyDays",
       "elevation",
-      "population",
+      "populationDensity",
       "crime",
     ].sort(),
   );
@@ -869,39 +871,39 @@ try {
   await pauseActiveFilters(page);
   await page.locator("#all").click();
   await page.locator("#add-filter").click();
-  await page.locator('[data-pick="population"]').click();
-  await page.locator('[data-eye="population"]').click();
-  const population = page.locator('[data-key="population"]');
-  const residents = exact("population", "min");
-  const slider = thumb("population", "min");
-  const upperSlider = thumb("population", "max");
+  await page.locator('[data-pick="populationDensity"]').click();
+  await page.locator('[data-eye="populationDensity"]').click();
+  const population = page.locator('[data-key="populationDensity"]');
+  const residents = exact("populationDensity", "min");
+  const slider = thumb("populationDensity", "min");
+  const upperSlider = thumb("populationDensity", "max");
   assert.match(await page.locator("#legend-sub").innerText(), /July 1, 2025/);
   assert.match(await page.locator("#credits").innerText(), /U.S. Census/);
   assert.equal(await residents.inputValue(), "0");
-  assert.equal(await exact("population", "max").inputValue(), "10000000");
+  assert.equal(await exact("populationDensity", "max").inputValue(), "100000");
   await slider.press("ArrowRight");
-  assert.equal(await residents.inputValue(), "10");
+  assert.equal(await residents.inputValue(), "0.01");
   await slider.press("Home");
   await upperSlider.press("Home");
-  assert.equal(await exact("population", "max").inputValue(), "0");
+  assert.equal(await exact("populationDensity", "max").inputValue(), "0");
   await upperSlider.press("End");
-  assert.equal(await exact("population", "max").inputValue(), "10000000");
-  await setBound("population", "max", 52);
+  assert.equal(await exact("populationDensity", "max").inputValue(), "100000");
+  await setBound("populationDensity", "max", 0.03);
   assert.equal(
     await upperSlider.getAttribute("aria-valuetext"),
-    "52 residents",
+    "0.03 people/mi²",
   );
   await expectColoredCount(1);
   await page.locator("#search").click();
-  await page.locator("#query").fill("48301");
+  await page.locator("#query").fill("02290");
   await page.locator("#query").press("Enter");
-  assert.equal(await page.locator(".detailval").innerText(), "52 residents");
+  assert.equal(await page.locator(".detailval").innerText(), "0.03 people/mi²");
   await page.locator("#close").click();
-  await setBound("population", "max", 9694934);
-  await setBound("population", "min", 9694934);
+  await setBound("populationDensity", "max", 73481.17);
+  await setBound("populationDensity", "min", 73481.17);
   assert.equal(
     await slider.getAttribute("aria-valuetext"),
-    "9,694,934 residents",
+    "73,481.17 people/mi²",
   );
   await expectColoredCount(1);
   await page.locator("#share").click();
@@ -911,17 +913,20 @@ try {
   await page.goto("about:blank");
   await page.goto(populationLink);
   await page.waitForSelector("#loading", { state: "hidden" });
-  assert.equal(await residents.inputValue(), "9694934");
+  assert.equal(await residents.inputValue(), "73481.17");
   await expectColoredCount(1);
   // Crossing either exact end clamps the edited end. The other exact value stays intact.
-  await setBound("population", "min", 9694935);
-  assert.equal(await residents.inputValue(), "9694934");
-  await setBound("population", "max", 9694933);
-  assert.equal(await exact("population", "max").inputValue(), "9694934");
+  await setBound("populationDensity", "min", 73481.18);
+  assert.equal(await residents.inputValue(), "73481.17");
+  await setBound("populationDensity", "max", 73481.16);
+  assert.equal(
+    await exact("populationDensity", "max").inputValue(),
+    "73481.17",
+  );
   await expectColoredCount(1);
   await upperSlider.press("End");
-  assert.equal(await residents.inputValue(), "9694934");
-  await setBound("population", "min", 9694935);
+  assert.equal(await residents.inputValue(), "73481.17");
+  await setBound("populationDensity", "min", 73481.18);
   await expectColoredCount(0);
   await page.setViewportSize({ width: 320, height: 670 });
   assert.ok(
@@ -937,7 +942,7 @@ try {
   await page.locator("#fold").click();
   await checkNationalFit(page);
   await page.locator("#fold").click();
-  await page.locator('[data-drop="population"]').click();
+  await page.locator('[data-drop="populationDensity"]').click();
   assert.equal(await population.count(), 0);
   const legacyView = {
     layer: "janLow",
@@ -969,23 +974,24 @@ try {
   await page.goto("about:blank");
   await page.goto(base);
   await page.waitForSelector("#loading", { state: "hidden" });
+  const temperatureKeys = calendarMonths.flatMap((name) => {
+    const month = name.slice(0, 3).toLowerCase();
+    return [month + "Low", month + "High"];
+  });
   const keys = [
-    "janLow",
-    "julHigh",
-    "coldLow",
-    "hotHigh",
+    ...temperatureKeys,
     "heatDays",
     "wetDays",
     "cloudyDays",
     "coldHumidity",
     "hotHumidity",
     "elevation",
-    "population",
+    "populationDensity",
   ];
   for (const key of keys) {
     if (!(await row(key).count())) {
       await page.locator("#add-filter").click();
-      const family = ["janLow", "julHigh", "coldLow", "hotHigh"].includes(key)
+      const family = temperatureKeys.includes(key)
         ? "temperature"
         : key.endsWith("Humidity")
           ? "humidity"
@@ -994,7 +1000,7 @@ try {
     }
   }
   await pauseActiveFilters(page);
-  // All four temperature and both humidity subtypes are present. Exhausted
+  // All 24 monthly temperature choices and both humidity measures are present. Exhausted
   // families disappear from the picker until one of their cards is removed.
   await page.locator("#add-filter").click();
   assert.equal(
@@ -1008,7 +1014,7 @@ try {
   assert.equal(
     await page
       .locator(
-        ".filter-row select:not([data-subtype]), [data-comparison], [data-add], [data-remove]",
+        ".filter-row select:not([data-subtype], [data-temperature-month], [data-temperature-stat]), [data-comparison], [data-add], [data-remove]",
       )
       .count(),
     0,
@@ -1049,21 +1055,21 @@ try {
   await pauseActiveFilters(page);
   for (const width of [1280, 320]) {
     await page.setViewportSize({ width, height: width > 400 ? 800 : 670 });
-    for (const maximum of [52, 53]) {
-      await setBound("population", "min", 52);
-      await setBound("population", "max", maximum);
-      await checkGrips(row("population"));
-      await checkGripPixels(row("population"));
+    for (const maximum of [0.03, 0.04]) {
+      await setBound("populationDensity", "min", 0.03);
+      await setBound("populationDensity", "max", maximum);
+      await checkGrips(row("populationDensity"));
+      await checkGripPixels(row("populationDensity"));
       await expectColoredCount(1);
       assert.equal(
-        await exact("population", "max").inputValue(),
+        await exact("populationDensity", "max").inputValue(),
         String(maximum),
       );
     }
-    const popSwitch = row("population").locator(".switch");
+    const popSwitch = row("populationDensity").locator(".switch");
     await popSwitch.click();
-    await checkGrips(row("population"));
-    await checkGripPixels(row("population"));
+    await checkGrips(row("populationDensity"));
+    await checkGripPixels(row("populationDensity"));
   }
   await page.locator('[data-eye="elevation"]').click();
   await setBound("elevation", "min", 10000);
@@ -1096,58 +1102,97 @@ try {
   await page.locator("#query").press("Enter");
   assert.equal(await page.locator(".detailval").innerText(), "11,405 ft");
   await page.locator("#close").click();
-  // Replacing a subtype keeps this card's position, switch and map eye. A
-  // second sibling keeps its own settings, and a share records both choices.
-  await page.goto(
-    base +
-      "?janLow=15..35&wetDays=32..85&julHigh=70..82&paused=janLow&layer=janLow",
-  );
+  // Choose two independent months and verify the shared mobile view.
+  await page.goto(base + "?janLow=15..35&wetDays=32..85&layer=janLow");
   const cards = () =>
     page
       .locator(".filter-row")
       .evaluateAll((els) => els.map((el) => el.dataset.key));
-  const current = row("janLow").locator("[data-subtype]");
-  await current.waitFor();
+  const monthSelect = (key) => row(key).locator("[data-temperature-month]");
+  const statSelect = (key) => row(key).locator("[data-temperature-stat]");
+  await monthSelect("janLow").waitFor();
   assert.deepEqual(
-    (await current.locator("option").allTextContents()).sort(),
-    [
-      "Average January Low",
-      "Average July High (already added)",
-      "Coldest-Month Average Low",
-      "Hottest-Month Average High",
-    ].sort(),
+    await monthSelect("janLow").locator("option").allTextContents(),
+    calendarMonths,
   );
-  assert.ok(await current.locator("[value=julHigh]").isDisabled());
-  await current.selectOption("coldLow");
-  assert.deepEqual(await cards(), ["coldLow", "wetDays", "julHigh"]);
-  assert.equal(await exact("julHigh", "min").inputValue(), "70");
-  assert.equal(await exact("julHigh", "max").inputValue(), "82");
+  await page.locator("#add-filter").click();
+  await page.locator('[data-pick="temperature"]').click();
+  await monthSelect("febLow").selectOption("10");
+  await statSelect("novLow").selectOption("High");
+  await setBound("novHigh", "min", 58);
+  await setBound("novHigh", "max", 72);
+  await page.locator("[data-eye=novHigh]").click();
   assert.equal(
-    await row("coldLow").locator(".switch").getAttribute("aria-checked"),
+    await page.locator("#legend-name").innerText(),
+    "Average November High",
+  );
+  await page.locator("#share").click();
+  const monthlyLink = new URL(
+    await page.evaluate(() => navigator.clipboard.readText()),
+  );
+  assert.equal(monthlyLink.searchParams.get("janLow"), "15..35");
+  assert.equal(monthlyLink.searchParams.get("novHigh"), "58..72");
+  assert.equal(monthlyLink.searchParams.get("layer"), "novHigh");
+  await page.goto("about:blank");
+  await page.goto(monthlyLink.href);
+  await monthSelect("novHigh").waitFor();
+  // Independently counted from the January low, November high, and wet-day records.
+  await expectColoredCount(173);
+  await page.locator("#any").click();
+  await expectColoredCount(2332);
+  await page.locator("#all").click();
+  await expectColoredCount(173);
+  assert.deepEqual(await cards(), ["janLow", "wetDays", "novHigh"]);
+  assert.equal(await monthSelect("novHigh").inputValue(), "10");
+  assert.equal(await statSelect("novHigh").inputValue(), "High");
+  assert.equal(await exact("janLow", "min").inputValue(), "15");
+  assert.equal(await exact("janLow", "max").inputValue(), "35");
+  assert.equal(await exact("novHigh", "min").inputValue(), "58");
+  assert.equal(await exact("novHigh", "max").inputValue(), "72");
+  for (const key of ["janLow", "novHigh"]) {
+    assert.equal(
+      await row(key).locator(".switch").getAttribute("aria-checked"),
+      "true",
+    );
+    for (const selector of [monthSelect(key), statSelect(key)]) {
+      await selector.scrollIntoViewIfNeeded();
+      const box = await selector.boundingBox();
+      assert.ok(
+        box.x >= 0 &&
+          box.x + box.width <= (await page.evaluate(() => innerWidth)),
+      );
+    }
+  }
+  // Switching a paused card to an occupied month selects its available
+  // statistic and preserves that card's position, eye, and sibling's bounds.
+  await row("novHigh").locator(".switch").click();
+  await statSelect("novHigh").selectOption("Low");
+  await monthSelect("novLow").selectOption("0");
+  assert.deepEqual(await cards(), ["janLow", "wetDays", "janHigh"]);
+  assert.ok(await statSelect("janHigh").locator('[value="Low"]').isDisabled());
+  assert.equal(
+    await row("janHigh").locator(".switch").getAttribute("aria-checked"),
     "false",
   );
   assert.equal(
-    await page.locator("[data-eye=coldLow]").getAttribute("aria-pressed"),
+    await page.locator("[data-eye=janHigh]").getAttribute("aria-pressed"),
     "true",
   );
+  assert.equal(await exact("janLow", "min").inputValue(), "15");
+  assert.equal(await exact("janLow", "max").inputValue(), "35");
+  await page.locator("#add-filter").click();
+  await page.locator("[data-pick=temperature]").click();
+  assert.ok(await monthSelect("febLow").locator('[value="0"]').isDisabled());
+  // Shared seasonal extremes still identify the same two county measures.
+  await page.goto(base + "?coldLow=0..30&hotHigh=70..85&layer=hotHigh");
+  await row("hotHigh").waitFor();
+  assert.deepEqual(await cards(), ["coldLow", "hotHigh"]);
   assert.equal(
     await page.locator("#legend-name").innerText(),
-    "Coldest-Month Average Low",
+    "Hottest-Month Average High",
   );
-  const restored = new URL(page.url());
-  assert.equal(restored.searchParams.has("janLow"), false);
-  assert.equal(restored.searchParams.get("layer"), "coldLow");
-  assert.equal(restored.searchParams.get("julHigh"), "70..82");
-  await page.reload();
-  await row("coldLow").waitFor();
-  assert.deepEqual(await cards(), ["coldLow", "wetDays", "julHigh"]);
-  const dropdown = row("coldLow").locator("[data-subtype]");
-  await dropdown.scrollIntoViewIfNeeded();
-  const selectBox = await dropdown.boundingBox();
-  assert.ok(
-    selectBox.x >= 0 &&
-      selectBox.x + selectBox.width <= (await page.evaluate(() => innerWidth)),
-  );
+  assert.equal(await exact("coldLow", "max").inputValue(), "30");
+  assert.equal(await exact("hotHigh", "min").inputValue(), "70");
   // An authored URL and a bookmark must work without first clicking Share.
   const bookmark =
     base +

@@ -10,6 +10,7 @@ import {
   defaults,
   color,
   sliderPosition,
+  residentsPerSquareMile,
 } from "../model.js";
 const f = (key, min, max) => ({ ...freshFilter(key, true), min, max });
 const legacy = (key, limit, op = "min", cutoff = 90, on = true) => ({
@@ -19,25 +20,67 @@ const legacy = (key, limit, op = "min", cutoff = 90, on = true) => ({
   cutoff,
   on,
 });
-test("population slider covers rural and urban counts while share links retain exact whole-person limits", () => {
-  const m = layers.population;
-  assert.equal(m.sliderStops[0], 0);
-  assert.equal(m.sliderStops.at(-1), 10_000_000);
-  for (const [index, count] of m.sliderStops.entries()) {
-    assert.equal(sliderPosition(m, count), index);
-    if (index > 0) assert.ok(m.sliderStops[index - 1] < count);
-  }
-  assert.equal(m.sliderStops[sliderPosition(m, 52)], 50);
-  assert.equal(m.sliderStops[sliderPosition(m, 1_234_567)], 1_200_000);
+test("density covers every county and retains sparse fractional limits", () => {
+  const data = JSON.parse(
+    readFileSync(new URL("../data/population.json", import.meta.url)),
+  );
+  const density = (id) =>
+    residentsPerSquareMile(data.counties[id], data.landAreaM2[id]);
+  const m = layers.populationDensity;
+  assert.equal(density("55025"), 493.44);
+  assert.equal(density("48301"), 0.08);
+  assert.equal(density("02290"), 0.03);
+  assert.equal(density("36061"), 73481.17);
+  assert.equal(residentsPerSquareMile(0, 100), 0);
+  assert.equal(residentsPerSquareMile(20, 0), null);
+  assert.equal(residentsPerSquareMile(undefined, 100), null);
+  for (const id of Object.keys(data.counties))
+    assert.ok(
+      Number.isFinite(density(id)) &&
+        density(id) >= m.domain[0] &&
+        density(id) <= m.domain[1],
+      id,
+    );
+  for (const [i, n] of m.sliderStops.entries())
+    assert.equal(sliderPosition(m, n), i);
   assert.equal(sliderPosition(layers.coldHumidity, 47.7), 47.7);
-  const shared = parseView({
-    layer: "population",
-    county: [f("population", 1_234_567, 1_765_432)],
-  });
-  assert.equal(shared.layer, "population");
-  assert.equal(shared.county[0].min, 1_234_567);
-  assert.equal(shared.county[0].max, 1_765_432);
+  const bounds = f("populationDensity", 0.03, 0.08);
+  const shared = parseView(
+    { layer: bounds.key, county: [bounds] },
+    assert.fail,
+  );
+  assert.deepEqual(shared.county, [bounds]);
 });
+test("monthly temperature ranges read each NOAA series and combine independently", () => {
+  const counties = JSON.parse(
+    readFileSync(new URL("../data/climate.json", import.meta.url)),
+  ).counties;
+  const dane = { values: counties["55025"] };
+  const january = f("janLow", 10.8, 10.8);
+  const november = f("novHigh", 45, 45);
+  assert.equal(outcome(dane, [january, november], "all"), true);
+  assert.equal(value(dane, "janHigh"), 27.2);
+  assert.equal(value(dane, "novLow"), 28);
+  november.min = 45.1;
+  november.max = 55;
+  assert.equal(outcome(dane, [january, november], "all"), false);
+  assert.equal(outcome(dane, [january, november], "any"), true);
+  assert.equal(value({ values: {} }, "novHigh"), null);
+  assert.equal(value(dane, null), null);
+  const metrics = Object.entries(layers).filter(([, m]) => m.temperatureStat);
+  assert.equal(metrics.length, 24);
+  for (const [key, metric] of metrics) {
+    for (const values of Object.values(counties)) {
+      const actual = value({ values }, key);
+      assert.equal(
+        actual,
+        values["monthly" + metric.temperatureStat][metric.month],
+      );
+      assert.ok(actual >= metric.domain[0] && actual <= metric.domain[1], key);
+    }
+  }
+});
+
 test("both match modes respect missing values, exact endpoints and zero", () => {
   const place = { values: { janLow: 0, julHigh: 80 } };
   const knownPass = f("janLow", -10, 0),
@@ -126,10 +169,10 @@ test("representable old shared links preserve their results under all and any", 
       views: { county: "population" },
       county: [legacy("janLow", 25), legacy("population", 123.6)],
     },
-    assert.fail,
+    (message) => assert.match(message, /total residents/),
   );
-  assert.equal(state.layer, "population");
-  assert.equal(state.county[1].min, 124);
+  assert.equal(state.layer, "populationDensity");
+  assert.deepEqual(state.county[1], freshFilter("populationDensity"));
 });
 test("unrepresentable links disable only the affected layer and report the reason", () => {
   for (const [key, mode, criteria, reason] of [
@@ -154,7 +197,11 @@ test("unrepresentable links disable only the affected layer and report the reaso
   ]) {
     const warnings = [];
     const s = parseView(
-      { layer: key, mode, county: [...criteria, f("population", 0, 500_000)] },
+      {
+        layer: key,
+        mode,
+        county: [...criteria, f("populationDensity", 0, 500)],
+      },
       (msg) => warnings.push(msg),
     );
     assert.equal(s.layer, key);
@@ -162,7 +209,7 @@ test("unrepresentable links disable only the affected layer and report the reaso
       s.county.map((f) => [f.key, f.on]),
       [
         [key, false],
-        ["population", true],
+        ["populationDensity", true],
       ],
     );
     assert.equal(s.county[0].min, criteria[0].limit);

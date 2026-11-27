@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import {
-  coverKeys,
-  regionKeys,
-  landscapeValues,
-  landShareLabel,
-} from "../landscape.js";
+import { coverKeys, landscapeValues, landShareLabel } from "../landscape.js";
 import {
   countyReading,
   freshFilter,
@@ -23,33 +18,28 @@ const range = (key, min, max) => ({ ...freshFilter(key, true), min, max });
 
 test("landscape sources join by county and measure; unavailable types remain unknown", () => {
   const ids = new Set(read("geography").counties.map((c) => c.id));
-  for (const [file, keys] of [
-    ["land-cover", coverKeys],
-    ["ecoregions", regionKeys],
-  ]) {
-    const data = read(file);
-    assert.deepEqual(new Set(data.keys), new Set(keys));
-    for (const [id, row] of Object.entries(data.counties)) {
-      assert.ok(ids.has(id), id);
-      if (!row) continue;
-      assert.equal(row.length, keys.length);
-      const shares = row.filter(Number.isFinite);
-      assert.ok(shares.every((n) => n >= 0 && n <= 100));
-      if (file === "land-cover" && shares.length) {
-        assert.ok(Math.abs(shares.reduce((s, n) => s + n, 0) - 100) <= 0.5, id);
-      }
+  const data = read("land-cover");
+  assert.deepEqual(new Set(data.keys), new Set(coverKeys));
+  for (const [id, row] of Object.entries(data.counties)) {
+    assert.ok(ids.has(id), id);
+    if (!row) continue;
+    assert.equal(row.length, coverKeys.length);
+    const shares = row.filter(Number.isFinite);
+    assert.ok(shares.every((n) => n >= 0 && n <= 100));
+    if (shares.length) {
+      assert.ok(Math.abs(shares.reduce((s, n) => s + n, 0) - 100) <= 0.5, id);
     }
-    const unseen = { values: landscapeValues(data, "99999") };
-    assert.equal(countyReading(unseen, keys[0]), "No data");
-    assert.equal(outcome(unseen, [range(keys[0], 0, 100)], "all"), null);
   }
+  const unseen = { values: landscapeValues(data, "99999") };
+  assert.equal(countyReading(unseen, coverKeys[0]), "No data");
+  assert.equal(outcome(unseen, [range(coverKeys[0], 0, 100)], "all"), null);
 });
 
-test("mixed landscapes can satisfy both covers; a trace of desert differs from zero", () => {
+test("mixed landscapes can satisfy both covers; a trace of development differs from zero", () => {
   const county = [
     range("farmCover", 40, 60),
     range("forestCover", 40, 60),
-    range("desertClimate", 0, 0),
+    range("developedCover", 0, 0),
   ];
   const url = writeViewUrl(
     "https://example.org/home-range/",
@@ -59,9 +49,9 @@ test("mixed landscapes can satisfy both covers; a trace of desert differs from z
   const saved = parseView(readViewUrl(url, assert.fail), assert.fail);
   assert.deepEqual(saved.county, county);
   assert.equal(saved.layer, "forestCover");
-  const values = { farmCover: 50, forestCover: 50, desertClimate: 0 };
+  const values = { farmCover: 50, forestCover: 50, developedCover: 0 };
   assert.equal(outcome({ values }, saved.county, "all"), true);
-  values.desertClimate = 0.001;
+  values.developedCover = 0.001;
   assert.equal(outcome({ values }, saved.county, "all"), false);
   assert.equal(outcome({ values }, saved.county, "any"), true);
   for (const [number, expected] of [
@@ -80,8 +70,6 @@ test("landscape searches lead to the appropriate county measure", () => {
     ["farms", "farmCover"],
     ["buildings", "developedCover"],
     ["prairie", "grassCover"],
-    ["prairie", "prairieRegion"],
-    ["desert", "desertClimate"],
   ]) {
     const hits = catalogMatches(new Set(), query).flatMap((g) => g.entries);
     assert.ok(

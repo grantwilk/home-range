@@ -1,6 +1,6 @@
 // The query describes the map. Saved custom locations stay in the fragment,
 // which a browser keeps out of requests to the static host.
-import { layers, defaults, freshFilter } from "./model.js";
+import { layers, defaults, freshFilter, retiredMeasure } from "./model.js";
 import { validPoint } from "./facility-model.js";
 
 const settings = new Set([
@@ -13,11 +13,13 @@ const settings = new Set([
   "heatDays.cutoff",
   "cities.population",
 ]);
+const retiredRegions = ["prairieRegion", "plainsRegion", "desertClimate"];
 const isLayer = (key) => Object.hasOwn(layers, key);
-// Retired percentage-based cloud links must reach the model’s unit migration.
-const readableLayer = (key) => key === "cloud" || isLayer(key);
+// Retired measure keys must reach the model’s unit migration.
+const readableLayer = (key) => retiredMeasure(key) || isLayer(key);
 const isSetting = (key) =>
   settings.has(key) ||
+  retiredRegions.includes(key) ||
   readableLayer(key) ||
   (key.endsWith(".unit") &&
     isLayer(key.slice(0, -5)) &&
@@ -80,7 +82,13 @@ export function readViewUrl(url, warn) {
       restoreOptions({ key, ...readRange(text), on: !paused.has(key) }),
     );
   }
-  if (county.length || q.get("filters") === "none") raw.county = county;
+  if (
+    county.length ||
+    q.get("filters") === "none" ||
+    retiredRegions.some((key) => q.has(key)) ||
+    retiredRegions.includes(raw.layer)
+  )
+    raw.county = county;
   if (readableLayer(raw.layer) && q.get("filters") !== "none") {
     raw.county ??= defaults().county;
     if (!raw.county.some((f) => f.key === raw.layer))

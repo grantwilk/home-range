@@ -1,5 +1,3 @@
-// Each cover is a share of classified land. The regional shares use
-// independent ecological boundaries, so they do not belong in the cover mix.
 const cover = {
   forestCover: [
     "Forest",
@@ -56,29 +54,7 @@ const cover = {
     "glacier glaciers permanent snowfields",
   ],
 };
-const regions = {
-  prairieRegion: [
-    "Prairie Parkland",
-    "Share of mapped county land in the Prairie Parkland ecological division, where prairie and woodland meet. This includes land now used for farms and towns.",
-    "#817332",
-    "ecoregion biome prairies temperate grasslands plains",
-  ],
-  plainsRegion: [
-    "Great Plains",
-    "Share of mapped county land in the Great Plains ecological division. Combine with Grassland to find counties with more open grass cover.",
-    "#8e7844",
-    "ecoregion biome great plains steppe shortgrass rangeland",
-  ],
-  desertClimate: [
-    "Desert Climate",
-    "Share of classified county land with a hot or cold desert climate. Vegetated desert counts too. A maximum of 0% excludes counties with any mapped desert climate.",
-    "#9e6338",
-    "ecoregion biome deserts arid sonoran mojave",
-  ],
-};
-
 export const coverKeys = Object.keys(cover);
-export const regionKeys = Object.keys(regions);
 
 // Use the same class color for its county profile bar and its map scale.
 function shareColors(swatch) {
@@ -89,35 +65,25 @@ function shareColors(swatch) {
   });
 }
 
-function landscapeLayersFor(definitions, family) {
-  const isCover = family === "landCover";
-  const layers = {};
-  for (const [key, [name, detail, swatch, searchTerms]] of Object.entries(
-    definitions,
-  )) {
-    layers[key] = {
-      name,
-      description: isCover
-        ? detail +
-          " Measured as a percentage of county land, excluding open water."
-        : detail,
-      searchTerms,
-      landscape: family,
-      icon: isCover ? "landCover" : "regions",
-      unit: "%",
-      domain: [0, 100],
-      bins: [1, 10, 25, 50, 75, 90],
-      colors: shareColors(swatch),
-      swatch,
-    };
-  }
-  return layers;
+export const landscapeLayers = {};
+for (const [key, [name, detail, swatch, searchTerms]] of Object.entries(
+  cover,
+)) {
+  landscapeLayers[key] = {
+    name,
+    description:
+      detail +
+      " Measured as a percentage of county land, excluding open water.",
+    searchTerms,
+    landCover: true,
+    icon: "landCover",
+    unit: "%",
+    domain: [0, 100],
+    bins: [1, 10, 25, 50, 75, 90],
+    colors: shareColors(swatch),
+    swatch,
+  };
 }
-
-export const landscapeLayers = {
-  ...landscapeLayersFor(cover, "landCover"),
-  ...landscapeLayersFor(regions, "ecoregion"),
-};
 
 export function landscapeValues(dataset, id) {
   const row = dataset.counties[id];

@@ -1321,6 +1321,16 @@ h1 {
   font-weight: 600;
   color: var(--soft);
 }
+.temperature-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.temperature-fields .subtype-field {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  min-width: 0;
+}
 .subtype-field select {
   width: 100%;
   min-width: 0;
@@ -1507,9 +1517,4 @@ h1 {
 }
 .land-track {
   background: #edf0e9;
-}
-
-.land-shares small {
-  display: block;
-  color: var(--soft);
 }

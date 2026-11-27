@@ -3,23 +3,34 @@ import assert from "node:assert/strict";
 import {
   catalog,
   catalogMatches,
+  entryFor,
+  canAddFilter,
   newCard,
   changeSubtype,
 } from "../filter-catalog.js";
 import { layers } from "../model.js";
 import { writeViewUrl } from "../view-url.js";
 
-test("the picker entries cover all measures exactly once", () => {
+test("the picker covers each current measure and older seasonal shares keep their names", () => {
   const entries = catalog.flatMap((group) => group.entries);
-  assert.equal(entries.length, 14);
+  assert.equal(entries.length, 13);
+  assert.equal(
+    canAddFilter(new Set(entries.flatMap((entry) => entry.keys))),
+    false,
+  );
+  for (const key of ["coldLow", "hotHigh"])
+    assert.equal(entryFor(key).name, layers[key].name);
   assert.deepEqual(
     entries.flatMap((entry) => entry.keys).sort(),
-    Object.keys(layers).sort(),
+    Object.keys(layers)
+      .filter((key) => !["coldLow", "hotHigh"].includes(key))
+      .sort(),
   );
 });
 
 test("a subtype search selects an available match and never offers a duplicate", () => {
   for (const [term, group, key] of [
+    ["november high", "temperature", "novHigh"],
     ["cardiac surgery", "distance", "hospitals"],
     ["middle school", "distance", "schools"],
     ["volcano", "hazard", "VLCN_RISKS"],

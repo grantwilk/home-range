@@ -1,14 +1,47 @@
 """Encode real geographic lines and polygons for the static proximity layers."""
 
 import gzip
+import hashlib
 import json
 import os
+import shutil
 import tempfile
+import urllib.request
 from pathlib import Path
+from time import sleep
 
 OUTPUT = Path(__file__).resolve().parents[1] / "data" / "nature"
 SCALE = 10_000
 TOLERANCE = 0.001
+
+
+def verified_file(destination, url, checksum):
+    """Reuse verified inputs and atomically replace missing or damaged cache files."""
+
+    def matches(path):
+        with path.open("rb") as data:
+            return hashlib.file_digest(data, "sha256").hexdigest() == checksum
+
+    if destination.exists() and matches(destination):
+        return destination
+    with tempfile.TemporaryDirectory(dir=destination.parent) as work:
+        download = Path(work) / destination.name
+        for attempt in range(3):
+            try:
+                with (
+                    urllib.request.urlopen(url, timeout=120) as response,
+                    download.open("wb") as out,
+                ):
+                    shutil.copyfileobj(response, out)
+                break
+            except OSError:
+                if attempt == 2:
+                    raise
+                sleep(2**attempt)
+        if not matches(download):
+            raise ValueError(f"Unexpected download checksum for {url}")
+        download.replace(destination)
+    return destination
 
 
 def parts_of(shape, kind):
