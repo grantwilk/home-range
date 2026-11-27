@@ -24,6 +24,7 @@ import {
   value,
   outcome,
   countyReading,
+  cutoffFor,
   matchRange,
   color,
   defaults,
@@ -205,7 +206,7 @@ function rangeEditor(filter, city = false) {
       "</div>"
     : `<div class="endpoints"><span>${[poles[f.key]?.[0], fmt(min, m.unit)].filter(Boolean).join(" · ")}</span><span>${[poles[f.key]?.[1], fmt(max, m.unit)].filter(Boolean).join(" · ")}</span></div>`;
   return `<div class="editor" data-setting="${city ? "citySize" : "range"}" role="group" aria-label="${m.name} range">
-    ${f.key === "heatDays" ? `<label class="cutoff-label">Count days at or above <input class="cutoff" type="number" min="60" max="110" value="${f.cutoff}"> °F</label>` : ""}
+    ${m.threshold ? `<label class="cutoff-label">${f.key === "coldDays" ? "Count daily lows below" : "Count days at or above"} <input class="cutoff" type="number" min="${m.threshold.min}" max="${m.threshold.max}" step="1" value="${f.cutoff}"> °F</label>` : ""}
     <div class="bound-fields">${inputs}</div>
     <div class="range-track"><div class="range-line">${handles}</div></div>
     ${endpoints}</div>`;
@@ -397,7 +398,14 @@ function bindFilters() {
       return;
     }
     if (!control.matches(".cutoff")) return;
-    const cutoff = clampNum(control.value, 60, 110, f.cutoff, 1);
+    const threshold = layers[f.key].threshold;
+    const cutoff = clampNum(
+      control.value,
+      threshold.min,
+      threshold.max,
+      f.cutoff,
+      1,
+    );
     if (cutoff !== f.cutoff) enableEditedFilter(editor, f);
     f.cutoff = cutoff;
     control.value = f.cutoff;
@@ -664,12 +672,16 @@ function paintLegend() {
       '<a href="https://www2.census.gov/geo/tiger/GENZ2017/shp/cb_2017_us_county_500k.zip">U.S. Census Bureau · 2017 county boundaries</a>';
     return;
   }
-  $("legend-name").textContent = metricName(state.layer, state.cutoff);
+  $("legend-name").textContent = metricName(
+    state.layer,
+    cutoffFor(state, state.layer),
+  );
   $("legend-icon").innerHTML = icon(m.icon);
   const statistic =
     {
       populationDensity: "Residents per land area",
       cloudyDays: "24-hour cloud cover ≥80%",
+      coldDays: "Average days per year · daily low",
       rainfall: "Mean annual rainfall",
       snowfall: "Mean seasonal snowfall",
     }[state.layer] ??
@@ -786,8 +798,9 @@ function refresh(continuous = false) {
   const hasAccess = local.some((f) => f.on || f.key === state.layer);
   const county = active.filter((f) => !layers[f.key].facility),
     votes = new Int8Array(places.length);
+  const mapCutoff = cutoffFor(state, state.layer);
   for (const [i, p] of places.entries()) {
-    const v = value(p, state.layer, state.cutoff),
+    const v = value(p, state.layer, mapCutoff),
       countyPass = outcome(p, county, state.mode),
       pass = hasAccess || countyPass;
     votes[i] = county.length
@@ -920,7 +933,7 @@ function search() {
             esc(p.state) +
             "</small></span><small>" +
             (metric() && !metric().facility
-              ? countyReading(p, state.layer, state.cutoff)
+              ? countyReading(p, state.layer, cutoffFor(state, state.layer))
               : "County") +
             "</small></button>"
           );
@@ -1096,7 +1109,7 @@ function placeDetails(uid) {
       p.id +
       "</p>" +
       (m && !m.facility
-        ? `<div class="detailval${m.hazard ? " hazard-reading" : ""}">${countyReading(p, state.layer, state.cutoff)}</div><p>${[esc(metricName(state.layer, state.cutoff)), monthName(state.layer), periodFor(state.layer, p)].filter(Boolean).join(" · ")}</p>`
+        ? `<div class="detailval${m.hazard ? " hazard-reading" : ""}">${countyReading(p, state.layer, cutoffFor(state, state.layer))}</div><p>${[esc(metricName(state.layer, cutoffFor(state, state.layer))), monthName(state.layer), periodFor(state.layer, p)].filter(Boolean).join(" · ")}</p>`
         : "") +
       '<div class="actions"><button class="secondary" id="locate-detail">' +
       icon("location", 16) +
@@ -1107,9 +1120,9 @@ function placeDetails(uid) {
         .map(
           (k) =>
             "<div>" +
-            esc(metricName(k, state.cutoff)) +
+            esc(metricName(k, cutoffFor(state, k))) +
             "<b>" +
-            fmt(value(p, k, state.cutoff), layers[k].unit) +
+            fmt(value(p, k, cutoffFor(state, k)), layers[k].unit) +
             "</b>" +
             (k === "populationDensity" || crimeCredits[k] || countySources[k]
               ? layers[k].period
@@ -1451,7 +1464,7 @@ function bind() {
         access?.active
           ? "Select for local access"
           : metric()
-            ? countyReading(p, state.layer, state.cutoff)
+            ? countyReading(p, state.layer, cutoffFor(state, state.layer))
             : "",
       ]
         .filter(Boolean)
@@ -1533,7 +1546,10 @@ async function init() {
       "crime",
       "land-cover",
     ].map(async (name) => {
-      const r = await fetch("./data/" + name + ".json");
+      // The second climate schema includes the daily-low threshold counts.
+      const path =
+        name === "climate" ? "./data/climate.json?v=2" : `./data/${name}.json`;
+      const r = await fetch(path);
       if (!r.ok) throw new Error(name + " HTTP " + r.status);
       return r.json();
     }),

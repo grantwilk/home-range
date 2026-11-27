@@ -11,6 +11,7 @@ const settings = new Set([
   "extent",
   "mapCutoff",
   "heatDays.cutoff",
+  "coldDays.cutoff",
   "cities.population",
 ]);
 const retiredRegions = ["prairieRegion", "plainsRegion", "desertClimate"];
@@ -56,8 +57,8 @@ export function readViewUrl(url, warn) {
     // Pass only the old minute marker to parseView for explicit migration.
     if (layers[key]?.facility && q.get(key + ".unit") === "min")
       f.units = "min";
-    if (key === "heatDays" && q.has("heatDays.cutoff"))
-      f.cutoff = numeric(q.get("heatDays.cutoff"));
+    if (layers[key]?.threshold && q.has(key + ".cutoff"))
+      f.cutoff = numeric(q.get(key + ".cutoff"));
     if (key === "cities" && q.has("cities.population"))
       f.citySize = readRange(q.get("cities.population"));
     if (key === "custom") {
@@ -116,8 +117,9 @@ export function writeViewUrl(base, state, extent) {
   for (const f of state.county) {
     q.append(f.key, rangeText(f));
     if (!f.on) q.append("paused", f.key);
-    if (f.key === "heatDays" && f.cutoff !== 90)
-      q.set("heatDays.cutoff", f.cutoff);
+    const threshold = layers[f.key]?.threshold;
+    if (threshold && f.cutoff !== threshold.initial)
+      q.set(f.key + ".cutoff", f.cutoff);
     if (f.key === "cities") q.set("cities.population", rangeText(f.citySize));
     if (f.key === "custom")
       for (const point of f.points)

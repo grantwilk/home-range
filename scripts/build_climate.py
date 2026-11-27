@@ -13,6 +13,8 @@ import json
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
+from itertools import accumulate
 from pathlib import Path
 
 import duckdb
@@ -20,7 +22,11 @@ import monthly_counties
 
 START, END = 1991, 2020
 YEARS = END - START + 1
-THRESHOLDS = range(60, 111)
+HEAT_THRESHOLDS = range(60, 111)
+COLD_THRESHOLDS = range(-60, 61)
+COUNTY_FIPS_SQL = """CASE WHEN fips = '24511' AND postal_code = 'MD'
+                       AND region_name = 'DC: District of Columbia'
+                       THEN '11001' ELSE fips END"""
 S3 = "https://noaa-nclimgrid-daily-pds.s3.amazonaws.com"
 BASE = S3 + "/EpiNOAA/v1-0-0/parquet/cty"
 README = S3 + "/doc/nclimgrid-daily_v1-0-0_readme-web.txt"
@@ -48,13 +54,11 @@ def summarize_month(db, path, year, month):
     # Calendar checks below reject duplicate dates and incomplete county-months.
     heat_columns = ", ".join(
         f"count(*) FILTER (WHERE tmax * 9 + 160 >= {threshold * 5}) AS heat{threshold}"
-        for threshold in THRESHOLDS
+        for threshold in HEAT_THRESHOLDS
     )
     query = f"""
         WITH daily AS (
-            SELECT CASE WHEN fips = '24511' AND postal_code = 'MD'
-                                      AND region_name = 'DC: District of Columbia'
-                               THEN '11001' ELSE fips END AS fips,
+            SELECT {COUNTY_FIPS_SQL} AS fips,
                    date::DATE AS day,
                    try_cast(tmax AS DECIMAL(8,2)) AS tmax,
                    try_cast(tmin AS DECIMAL(8,2)) AS tmin,
@@ -107,6 +111,33 @@ def summarize_county(months):
     return result
 
 
+def cold_histograms(db, files):
+    """Count each daily low once, in the first whole-degree cutoff above it."""
+    # 32 + tmin * 9/5 is in °F. FLOOR(x) + 1 implements strict "below",
+    # including equality at negative temperatures. The last bucket holds warmer
+    # days so that all dated rows can be reconciled against the complete series.
+    query = f"""
+        WITH lows AS (
+            SELECT {COUNTY_FIPS_SQL} AS fips, try_cast(tmin AS DECIMAL(8,2)) AS tmin
+            FROM read_parquet(?)
+            WHERE region_type = 'cty' AND date IS NOT NULL
+        )
+        SELECT fips, greatest(?, least(?, floor((tmin * 9 + 160) / 5)::INT + 1))
+                    AS first_cutoff, count(*)
+        FROM lows
+        WHERE tmin BETWEEN -90 AND 65
+        GROUP BY fips, first_cutoff
+    """
+    rows = db.execute(
+        query,
+        [[str(file) for file in files], COLD_THRESHOLDS.start, COLD_THRESHOLDS.stop],
+    ).fetchall()
+    histograms = {}
+    for fips, cutoff, count in rows:
+        histograms.setdefault(fips, {})[cutoff] = count
+    return histograms
+
+
 def build(cache, output):
     cache.mkdir(parents=True, exist_ok=True)
     dates = [(y, m) for y in range(START, END + 1) for m in range(1, 13)]
@@ -117,11 +148,18 @@ def build(cache, output):
     for path, (year, month) in zip(files, dates, strict=True):
         for fips, *values in summarize_month(db, path, year, month):
             by_county.setdefault(fips, {}).setdefault(month, []).append(values)
+    cold = cold_histograms(db, files)
     db.close()
+    expected_days = (date(END + 1, 1, 1) - date(START, 1, 1)).days
     counties = {}
     for fips, months in sorted(by_county.items()):
         result = summarize_county(months)
         if result is not None:
+            histogram = cold[fips]
+            if sum(histogram.values()) != expected_days:
+                raise ValueError(f"Cold-day coverage mismatch for {fips}")
+            counts = accumulate(histogram.get(t, 0) for t in COLD_THRESHOLDS)
+            result["coldDays"] = [round(n / YEARS, 1) for n in counts]
             counties[fips] = result
     if not counties:
         raise ValueError("No county has a complete climate record.")
@@ -135,7 +173,8 @@ def build(cache, output):
         "sourceUnits": {"tmin": "°C", "tmax": "°C", "tavg": "°C", "prcp": "mm"},
         "methods": {
             "temperatures": "Mean of 30 annual calendar-month means, converted to °F. Coldest and hottest months use monthly mean temperature; ties use the earliest month.",
-            "days": "Mean annual number of calendar days where county-area daily high ≥ named °F threshold or daily precipitation ≥ 0.254 mm (wet) or < 0.254 mm (dry). Leap days included.",
+            "days": "Mean annual number of calendar days where county-area daily high ≥ named °F threshold, daily low < named °F threshold, or daily precipitation ≥ 0.254 mm (wet) or < 0.254 mm (dry). Leap days included.",
+            "coldThresholdsF": [COLD_THRESHOLDS.start, COLD_THRESHOLDS.stop - 1],
             "coverage": "Contiguous United States. Requires exactly one valid county record per calendar day in all 360 months. County boundaries follow the source FIPS vintage.",
             "precision": "Published figures are rounded to the nearest tenth.",
         },

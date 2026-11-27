@@ -30,9 +30,40 @@ test("readable query ranges are inclusive, active by default, ordered and indepe
   assert.equal(layerOnly.county.at(-1).on, false);
 });
 
+test("cold day thresholds restore independently of hot days and reject invalid values", () => {
+  const example = read("?coldDays=0..14&layer=coldDays");
+  assert.deepEqual(example.county, [f("coldDays", 0, 14)]);
+  assert.equal(example.county[0].cutoff, -30);
+  for (const cutoff of [-60, 0, 60]) {
+    const displayed = read(
+      `?layer=coldDays&coldDays.cutoff=${cutoff}&mapCutoff=100`,
+    );
+    const cold = displayed.county.find((filter) => filter.key === "coldDays");
+    assert.equal(cold.on, false);
+    assert.equal(cold.cutoff, cutoff);
+    assert.equal(displayed.cutoff, 100);
+  }
+  for (const invalid of ["", "-61", "61", "-30.5", "NaN"]) {
+    const warnings = [];
+    const state = read(
+      `?coldDays=0..14&coldDays.cutoff=${invalid}`,
+      (warning) => warnings.push(warning),
+    );
+    assert.equal(state.county[0].cutoff, -30);
+    assert.match(warnings.join(" "), /Cold Days uses -30°F/);
+  }
+  const updated = writeViewUrl(
+    new URL("?coldDays=5..7&coldDays.cutoff=12", base),
+    example,
+    [1, 0, 0],
+  );
+  assert.equal(updated.searchParams.has("coldDays.cutoff"), false);
+  assert.deepEqual(read(updated), example);
+});
 test("every layer and its settings survive a share, including custom labels in the fragment", () => {
   const county = Object.keys(layers).map((key) => freshFilter(key));
   const byKey = Object.fromEntries(county.map((f) => [f.key, f]));
+  Object.assign(byKey.coldDays, { min: 0, max: 14, cutoff: -32, on: true });
   Object.assign(byKey.heatDays, { min: 2.5, max: 80, cutoff: 83, on: true });
   Object.assign(byKey.cities, {
     min: 1.2,
@@ -53,6 +84,7 @@ test("every layer and its settings survive a share, including custom labels in t
   assert.deepEqual(readViewUrl(url, assert.fail).extent, extent);
   assert.deepEqual(url.searchParams.getAll("tag"), ["a", "b"]);
   assert.equal(url.searchParams.get("heatDays.cutoff"), "83");
+  assert.equal(url.searchParams.get("coldDays.cutoff"), "-32");
   assert.equal(url.searchParams.get("mapCutoff"), "101");
   assert.ok(url.hash.startsWith("#map&place="));
   assert.ok(!url.search.includes("89.401") && !url.search.includes("Apt"));

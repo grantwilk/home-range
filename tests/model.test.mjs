@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   outcome,
+  metricName,
+  cutoffFor,
   value,
   layers,
   freshFilter,
@@ -117,6 +119,29 @@ test("a range is one inclusive criterion in both modes", () => {
     );
   }
 });
+test("cold days use the selected daily-low threshold and include the annual range endpoints", () => {
+  const filter = f("coldDays", 0, 14);
+  const counts = Array(121).fill(null);
+  counts[0] = 0;
+  counts[30] = 14;
+  counts[31] = 14.1;
+  counts[120] = 310.3;
+  const place = { values: { coldDays: counts } };
+  assert.equal(value(place, "coldDays"), 14);
+  assert.equal(value(place, "coldDays", -60), 0);
+  assert.equal(value(place, "coldDays", 60), 310.3);
+  assert.equal(value(place, "coldDays", 61), null);
+  assert.equal(value(place, "coldDays", -29.5), null);
+  assert.equal(metricName("coldDays"), "Days Below -30°F");
+  assert.equal(outcome(place, [filter], "all"), true);
+  filter.cutoff = -29;
+  assert.equal(outcome(place, [filter], "all"), false);
+  assert.equal(outcome({ values: {} }, [filter], "all"), null);
+  const state = { county: [filter], cutoff: 105 };
+  assert.equal(cutoffFor(state, "coldDays"), -29);
+  assert.equal(cutoffFor(state, "heatDays"), 105);
+  assert.equal(cutoffFor(defaults(), "coldDays"), -30);
+});
 test("new layers and default cards start at the full supported domain", () => {
   for (const [key, m] of Object.entries(layers)) {
     if (m.facility) continue;
@@ -125,7 +150,7 @@ test("new layers and default cards start at the full supported domain", () => {
       on: false,
       min: m.domain[0],
       max: m.domain[1],
-      cutoff: 90,
+      cutoff: key === "coldDays" ? -30 : 90,
     });
     assert.equal(freshFilter(key, true).on, true);
   }
@@ -187,6 +212,12 @@ test("unrepresentable links disable only the affected layer and report the reaso
       "any",
       [legacy("janLow", 30), legacy("janLow", 20, "max")],
       "gap",
+    ],
+    [
+      "coldDays",
+      "all",
+      [legacy("coldDays", 0, "min", -30), legacy("coldDays", 14, "max", -20)],
+      "cutoffs",
     ],
     [
       "heatDays",

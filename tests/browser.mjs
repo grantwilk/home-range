@@ -8,6 +8,7 @@ import {
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
 import { checkPdfExport } from "./pdf-browser.mjs";
+import { checkColdDays } from "./cold-days-browser.mjs";
 import { checkNature } from "./nature-browser.mjs";
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
@@ -673,7 +674,7 @@ try {
   assert.deepEqual(await addButton.boundingBox(), buttonBefore);
   const mapRect = await page.locator("#map").boundingBox();
   await page.locator("#add-filter").click();
-  await page.locator('[data-pick="heatDays"]').click();
+  await pickMeasure(page, "temperatureDays", "heatDays");
   await page.locator('[data-view="heatDays"]').click();
   assert.deepEqual(await page.locator("#map").boundingBox(), mapRect);
   assert.equal(await page.evaluate(() => window.scrollY), 0);
@@ -740,7 +741,7 @@ try {
       "nature",
       "landCover",
       "hazard",
-      "heatDays",
+      "temperatureDays",
       "wetDays",
       "annualPrecipitation",
       "cloudyDays",
@@ -995,7 +996,9 @@ try {
         ? "temperature"
         : key.endsWith("Humidity")
           ? "humidity"
-          : key;
+          : key === "heatDays"
+            ? "temperatureDays"
+            : key;
       await pickMeasure(page, family, key);
     }
   }
@@ -1223,6 +1226,7 @@ try {
   await checkLandscape(page, base);
   await checkAnnualPrecipitation(page, base);
   await checkCrime(page, base);
+  await checkColdDays(page, base);
   await checkLocalAccess(page, base);
   await checkNature(page, base);
   await checkPdfExport(page, base, tmp);

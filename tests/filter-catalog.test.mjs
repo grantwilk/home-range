@@ -30,6 +30,8 @@ test("the picker covers each current measure and older seasonal shares keep thei
 
 test("a subtype search selects an available match and never offers a duplicate", () => {
   for (const [term, group, key] of [
+    ["freezing", "temperatureDays", "coldDays"],
+    ["hot days", "temperatureDays", "heatDays"],
     ["november high", "temperature", "novHigh"],
     ["cardiac surgery", "distance", "hospitals"],
     ["middle school", "distance", "schools"],

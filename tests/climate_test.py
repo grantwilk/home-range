@@ -10,7 +10,7 @@ import duckdb
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from build_climate import summarize_month
+from build_climate import cold_histograms, summarize_month
 
 
 class ClimateDataTests(unittest.TestCase):
@@ -43,6 +43,39 @@ class ClimateDataTests(unittest.TestCase):
         self.assertEqual(rows[0][6 + 86 - 60], 28)
         self.assertEqual(rows[0][6 + 87 - 60], 0)
 
+    def test_strict_cold_thresholds_and_dc_identifier(self):
+        db = duckdb.connect()
+        # -40°C equals -40°F. The two values near -34.44°C straddle -30°F.
+        # Zero Celsius equals 32°F, and lows beyond either endpoint still count once.
+        temperatures = [-51.12, -40.01, -40, -39.99, -34.45, -34.44, -0.01, 0, 0.01, 16]
+        db.execute(
+            """
+            CREATE TABLE daily AS SELECT '24511' AS fips,
+               'MD' AS postal_code, 'DC: District of Columbia' AS region_name,
+               'cty' AS region_type, date '1991-01-01' + n::INT AS date, tmin
+            FROM unnest(?) WITH ORDINALITY AS lows(tmin, n)
+        """,
+            [temperatures],
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / "sample.parquet"
+            db.table("daily").to_parquet(str(file))
+            self.assertEqual(
+                cold_histograms(db, [file]),
+                {
+                    "11001": {
+                        -60: 1,
+                        -40: 1,
+                        -39: 2,
+                        -30: 1,
+                        -29: 1,
+                        32: 1,
+                        33: 2,
+                        61: 1,
+                    }
+                },
+            )
+
     def test_shipped_coverage_and_invariants(self):
         data = json.loads((ROOT / "data/climate.json").read_text())["counties"]
         geo = {
@@ -66,7 +99,12 @@ class ClimateDataTests(unittest.TestCase):
                     )
                 )
             )
+            self.assertEqual("coldDays" in county, "heatDays" in county)
             if "heatDays" in county:
+                self.assertEqual(len(county["coldDays"]), 121)
+                self.assertEqual(county["coldDays"], sorted(county["coldDays"]))
+                self.assertGreaterEqual(county["coldDays"][0], 0)
+                self.assertLessEqual(county["coldDays"][-1], round(10958 / 30, 1))
                 self.assertEqual(len(county["heatDays"]), 51)
                 self.assertEqual(
                     county["heatDays"], sorted(county["heatDays"], reverse=True)
@@ -83,6 +121,17 @@ class ClimateDataTests(unittest.TestCase):
         # Independent scans of all dated source rows (July and January
         # have fixed lengths), plus NOAA's Honolulu monthly Fahrenheit records.
         data = json.loads((ROOT / "data/climate.json").read_text())["counties"]
+        # Direct comparisons against daily Fahrenheit lows across all 10,958
+        # dates at -30°F, 0°F and 32°F, independent of the cumulative histogram.
+        for fips, expected in {
+            "27077": (3.0, 55.9, 188.8),
+            "55025": (0.1, 15.8, 147.5),
+            "11001": (0.0, 0.2, 81.3),
+            "04013": (0.0, 0.0, 4.8),
+        }.items():
+            self.assertEqual(
+                tuple(data[fips]["coldDays"][t + 60] for t in (-30, 0, 32)), expected
+            )
         self.assertEqual(data["15003"]["janLow"], 63.1)
         for fips, expected in {
             "01001": (35.0, 91.7, 68.9, 116.2),

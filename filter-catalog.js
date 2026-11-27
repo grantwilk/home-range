@@ -29,11 +29,16 @@ export const catalog = [
           "Average humidity in the county’s coldest or hottest month.",
         keys: ["coldHumidity", "hotHumidity"],
       },
-      single(
-        "heatDays",
-        "Days per year reaching a temperature you choose.",
-        "heat hot warm threshold temperature",
-      ),
+      {
+        id: "temperatureDays",
+        name: "Hot & Cold Days",
+        label: "Count",
+        description:
+          "Count days per year above or below a temperature threshold.",
+        searchName: "temperature threshold days",
+        keys: ["heatDays", "coldDays"],
+        independentRanges: true,
+      },
       {
         id: "annualPrecipitation",
         name: "Annual Precipitation",
@@ -161,6 +166,8 @@ export function optionName(key) {
 }
 
 const aliases = {
+  heatDays: "hot heat warm days above",
+  coldDays: "cold freezing freeze frost subzero below zero winter nights",
   violentCrimeRate: "assault robbery rape murder police offenses",
   homicideRate: "murder deaths mortality",
   coast:
@@ -178,12 +185,19 @@ const aliases = {
   cities: "towns downtown city size",
 };
 export function catalogMatches(used, query = "") {
-  const words = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const search = query.toLowerCase().trim();
+  const words = search.split(/\s+/).filter(Boolean);
   return catalog
     .map((group) => ({
       name: group.name,
       entries: group.entries.flatMap((entry) => {
-        const common = [group.name, entry.name, entry.searchTerms]
+        const common = [
+          group.name,
+          search === entry.name.toLowerCase()
+            ? entry.name
+            : (entry.searchName ?? entry.name),
+          entry.searchTerms,
+        ]
           .join(" ")
           .toLowerCase();
         const matches = entry.keys.filter((key) => {

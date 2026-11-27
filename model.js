@@ -42,6 +42,15 @@ const crimeColors = [
   "#9f6264",
   "#744454",
 ];
+const snowColors = [
+  "#f2f4f4",
+  "#d7e5e8",
+  "#b9d4df",
+  "#93bad0",
+  "#6e9bbc",
+  "#4b79a4",
+  "#375781",
+];
 const climate = "1991–2020";
 // Each successive decade occupies a similar amount of slider travel.
 function graduatedStops(steps) {
@@ -154,16 +163,32 @@ export const layers = {
   ),
   coldHumidity: seasonalHumidity("Coldest"),
   hotHumidity: seasonalHumidity("Hottest"),
-  heatDays: layer(
-    "Hot Days",
-    "days/yr",
-    "sun",
-    climate,
-    "Average number of days per year when the countywide daily high reaches or exceeds your chosen temperature.",
-    [5, 15, 30, 60, 90, 120],
-    thermal,
-    [0, 366],
-  ),
+  heatDays: {
+    ...layer(
+      "Hot Days",
+      "days/yr",
+      "sun",
+      climate,
+      "Average number of days per year when the countywide daily high reaches or exceeds your chosen temperature.",
+      [5, 15, 30, 60, 90, 120],
+      thermal,
+      [0, 366],
+    ),
+    threshold: { min: 60, max: 110, initial: 90 },
+  },
+  coldDays: {
+    ...layer(
+      "Cold Days",
+      "days/yr",
+      "snow",
+      climate,
+      "Average days per year when the countywide daily low fell below your threshold. Daily records cover the contiguous U.S.",
+      [0.1, 1, 5, 15, 30, 90],
+      snowColors,
+      [0, 366],
+    ),
+    threshold: { min: -60, max: 60, initial: -30 },
+  },
   rainfall: layer(
     "Annual Rainfall",
     "in/yr",
@@ -181,15 +206,7 @@ export const layers = {
     "2008–09 through 2025–26, excluding 2020–21",
     "Average inches of new snow over an October–September season. NOAA covers the contiguous U.S. Counties with incomplete coverage are marked on the map.",
     [1, 5, 15, 30, 60, 100],
-    [
-      "#f2f4f4",
-      "#d7e5e8",
-      "#b9d4df",
-      "#93bad0",
-      "#6e9bbc",
-      "#4b79a4",
-      "#375781",
-    ],
+    snowColors,
     [0, 300],
   ),
   wetDays: layer(
@@ -277,15 +294,25 @@ export const poles = {
   hotHumidity: ["Less humid", "More humid"],
   wetDays: ["Drier", "Wetter"],
 };
-export function value(place, key, cutoff = 90) {
+export function cutoffFor(state, key) {
+  if (key === "coldDays")
+    return (
+      state.county.find((f) => f.key === key)?.cutoff ??
+      layers.coldDays.threshold.initial
+    );
+  return state.cutoff;
+}
+export function value(place, key, cutoff = layers[key]?.threshold?.initial) {
   const readings = place.values;
   const metric = layers[key];
   let x = readings?.[key];
   if (metric?.temperatureStat) {
     const series = readings?.["monthly" + metric.temperatureStat];
     if (series) x = series[metric.month];
-  } else if (key === "heatDays") {
-    x = readings?.heatDays?.[cutoff - 60];
+  } else if (metric?.threshold) {
+    x = validCutoff(cutoff, metric.threshold)
+      ? x?.[cutoff - metric.threshold.min]
+      : null;
   }
   return Number.isFinite(x) ? x : null;
 }
@@ -327,7 +354,7 @@ export const freshFilter = (key, on = false) => ({
   on,
   min: layers[key].domain[0],
   max: layers[key].domain[1],
-  cutoff: 90,
+  cutoff: layers[key].threshold?.initial ?? 90,
   ...facilityOptions(key),
 });
 export const defaults = () => ({
@@ -336,7 +363,8 @@ export const defaults = () => ({
   mode: "all",
   county: [freshFilter("janLow")],
 });
-const validCutoff = (x) => Number.isInteger(x) && x >= 60 && x <= 110;
+const validCutoff = (x, { min, max }) =>
+  Number.isInteger(x) && x >= min && x <= max;
 
 function readRange(input, warnings) {
   const { key } = input;
@@ -356,11 +384,13 @@ function readRange(input, warnings) {
   const scale = 1 / (metric.step ?? 0.1);
   const [floor, ceiling] = metric.domain;
   const clamp = (v) => Math.max(floor, Math.min(ceiling, v));
-  if (validCutoff(input.cutoff)) range.cutoff = input.cutoff;
-  else if (key === "heatDays" && input.cutoff !== undefined) {
-    warnings.add(
-      "Hot days uses 90°F because the link's temperature cutoff is invalid.",
-    );
+  if (metric.threshold && input.cutoff !== undefined) {
+    if (validCutoff(input.cutoff, metric.threshold))
+      range.cutoff = input.cutoff;
+    else
+      warnings.add(
+        `${metric.name} uses ${range.cutoff}°F because the link's temperature cutoff is invalid.`,
+      );
   }
 
   if (Object.hasOwn(input, "min") || Object.hasOwn(input, "max")) {
@@ -416,10 +446,7 @@ function mergeRanges(ranges, mode, warnings) {
     );
     return { ...first, on: false };
   };
-  if (
-    first.key === "heatDays" &&
-    candidates.some((f) => f.cutoff !== first.cutoff)
-  ) {
+  if (metric.threshold && candidates.some((f) => f.cutoff !== first.cutoff)) {
     return incompatible("the link used different temperature cutoffs");
   }
   if (mode === "all") {
@@ -473,7 +500,8 @@ export function parseView(raw, warn = () => {}) {
   if (!raw || typeof raw !== "object") return state;
   const warnings = new Set();
   state.mode = (raw.mode ?? raw.modes?.county) === "any" ? "any" : "all";
-  if (validCutoff(raw.cutoff)) state.cutoff = raw.cutoff;
+  if (validCutoff(raw.cutoff, layers.heatDays.threshold))
+    state.cutoff = raw.cutoff;
   const migrated = new Set();
   const linked = Array.isArray(raw.county)
     ? raw.county.slice(0, linkedFilterLimit)
@@ -543,8 +571,11 @@ export const fmt = (v, unit) =>
         maximumFractionDigits:
           unit === "/ 100" || unit === "people/mi²" ? 2 : 1,
       }) + (unit === "°F" ? "°F" : unit === "%" ? "%" : " " + unit);
-export const metricName = (key, cutoff) =>
-  key === "heatDays" ? "Days at or Above " + cutoff + "°F" : layers[key].name;
+export function metricName(key, cutoff = layers[key]?.threshold?.initial) {
+  if (key === "heatDays") return `Days at or Above ${cutoff}°F`;
+  if (key === "coldDays") return `Days Below ${cutoff}°F`;
+  return layers[key].name;
+}
 
 export function countyReading(place, key, cutoff) {
   if (!place) return "No county data";

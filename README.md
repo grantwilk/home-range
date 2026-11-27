@@ -12,14 +12,14 @@ Open **Add Filter** to browse these groups.
 
 | Group | Filter Types |
 | --- | --- |
-| Climate & Weather | Temperature, Relative Humidity, Hot Days, Annual Precipitation, Wet Days, Cloudy Days per Year |
+| Climate & Weather | Temperature, Relative Humidity, Hot & Cold Days, Annual Precipitation, Wet Days, Cloudy Days per Year |
 | Population & Nearby Places | County Population Density, County Crime, Distance to Places |
 | Land & Terrain | Land Cover, Average County Elevation, Distance to Nature |
 | Natural Hazards | Natural Hazard Risk |
 
 - Choose **Temperature**, **Relative Humidity**, **Annual Precipitation**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
 - Click the eye or layer name to color the map. Its switch applies or pauses the filter. Use **×** to remove the card.
-- Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot Days** also lets you set the daily high that counts as a hot day.
+- Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot & Cold Days** lets you choose a daily high threshold for hot days or a daily low threshold for cold days. Add the card twice to use both.
 - **County Population Density** filters on residents per square mile of land. The slider has finer steps for rural counties, and you can enter limits to two decimal places. County details also show the total number of residents.
 - Use **Find a Place** or press **/** to search for a city, town, or county by name. Add a state to narrow the results, or enter a five-digit county code. Choosing a city or town zooms directly to it. You can also enter latitude and longitude. With a distance layer active or visible, the result opens nearby-place details.
 - Cities and towns are labeled at every scale. Zoom in to see smaller places. The **Map Key** identifies symbols for each enabled point filter, even when the map displays another measure. In dense areas, zoom in to reveal more individual locations.
@@ -35,6 +35,7 @@ To edit a link by hand, use the filter key followed by an inclusive `minimum..ma
 - `airports=0..30` selects locations within 30 straight-line miles of a qualifying commercial airport.
 - `cities=0..10&cities.population=150000..3000000` selects places within ten miles of a city in that population range.
 - `heatDays=0..30&heatDays.cutoff=95&mapCutoff=90` filters on days reaching 95°F and displays days reaching 90°F when the heat layer is viewed.
+- [Cold days below −30°F, 0–14 days per year](https://grantwilk.com/home-range/?coldDays=0..14&coldDays.cutoff=-30&layer=coldDays) uses the average annual number of days when the countywide daily low fell strictly below −30°F. Choose any whole-degree threshold from −60°F to 60°F.
 - `rainfall=25..45&snowfall=0..50` selects counties averaging 25–45 inches of rain and up to 50 inches of new snow per year.
 - `cloudyDays=0..75` selects counties averaging at most 75 cloudy days per year. Old `cloud` percentage links open with the replacement filter paused so you can choose a range in days.
 - `populationDensity=10..100` selects counties with 10–100 residents per square mile of land. Links with a former `population` total open with density paused unless an explicit density range is also present.
@@ -52,7 +53,7 @@ Geography uses 2017 boundaries for 3,142 counties and equivalents across the 50 
 | --- | --- | --- |
 | Average daily low and high for every calendar month (24 filter choices) | 1991–2020 | 3,140 counties |
 | Mean relative humidity in the local coldest and hottest months | 1981–2010 | 3,140 counties |
-| Days with a daily high at or above a chosen temperature, wet-day frequency (drier to wetter) | 1991–2020 | 3,107 counties |
+| Hot days (daily high at or above threshold), cold days (daily low below threshold), and wet-day frequency | 1991–2020 | 3,107 counties |
 | Annual rainfall | 1991–2020 | 3,142 counties |
 | Annual snowfall | 17 complete snow seasons from 2008–09 through 2025–26 | 2,966 counties in the contiguous U.S. |
 | Cloudy days per year | 1991–2020 | 3,142 counties |
@@ -63,7 +64,7 @@ Geography uses 2017 boundaries for 3,142 counties and equivalents across the 50 
 | Homicide death rate | 2017–2023 | 1,447 counties |
 | Overall natural hazard risk and 18 individual hazards | FEMA National Risk Index, December 2025 | 3,133 matched county boundaries. Coverage varies by hazard. |
 
-Temperature and wet-day frequency use NOAA's published county-scale daily series for the contiguous U.S. and monthly series for Alaska and Hawaii. The importer requires complete records. Day counts use the daily county-area average. Wet days reach 0.01 inches of precipitation. Local coldest and hottest months use mean temperature to choose the month. Lexington city, Virginia, lacks a daily series in the source. The historical Valdez-Cordova Census Area has no matching Alaska monthly record. [EpiNOAA Documentation](https://arc.ncics.org/nclimgrid-overview/) · [NOAA Monthly County Files](https://www.ncei.noaa.gov/monitoring-content/data/us/climdiv/monthly/current/county-readme.txt)
+Temperature and wet-day frequency use NOAA's published county-scale daily series for the contiguous U.S. and monthly series for Alaska and Hawaii. The importer requires complete records. Day counts use the daily county-area average and are rounded to a tenth of a day per year. Alaska and Hawaii have monthly records only and show no data for Hot Days and Cold Days. Wet days reach 0.01 inches of precipitation. Local coldest and hottest months use mean temperature to choose the month. Lexington city, Virginia, lacks a daily series in the source. The historical Valdez-Cordova Census Area has no matching Alaska monthly record. [EpiNOAA Documentation](https://arc.ncics.org/nclimgrid-overview/) · [NOAA Monthly County Files](https://www.ncei.noaa.gov/monitoring-content/data/us/climdiv/monthly/current/county-readme.txt)
 
 Choose **Add Filter → Average County Elevation** to select a range in feet above sea level. The eye displays the terrain layer. Each value averages the USGS 30-arc-second mean-elevation grid over the mapped county footprint, including water surfaces within the boundary. Each cell contributes according to its area inside the county. A town, neighborhood or individual home can have a different elevation. [USGS GMTED2010](https://pubs.usgs.gov/of/2011/1073/)
 
