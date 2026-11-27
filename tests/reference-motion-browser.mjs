@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 export async function checkReferenceMotion(page, base) {
   await page.setViewportSize({ width: 1280, height: 820 });
+  await page.clock.install();
   await page.goto(
     base +
       "?airports=0..80&hospitals=0..60&grocery=0..30&layer=grocery&extent=3,-900,-550",
@@ -56,6 +57,11 @@ export async function checkReferenceMotion(page, base) {
   await page.mouse.up();
   await checkReleased(pan);
 
+  // Advance input time explicitly so a busy runner cannot turn the gap
+  // between two wheel events into the end of the gesture.
+  await page.clock.pauseAt(
+    new Date(await page.evaluate(() => Date.now() + 1000)),
+  );
   const wheel = await snapshot();
   for (let i = 0; i < 4; i++) {
     await svg.dispatchEvent("wheel", {
@@ -64,8 +70,9 @@ export async function checkReferenceMotion(page, base) {
       deltaY: -4,
       ctrlKey: true,
     });
-    await frame();
+    await page.clock.runFor(32);
     await checkHeld(wheel);
   }
+  await page.clock.runFor(300);
   await checkReleased(wheel);
 }

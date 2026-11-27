@@ -1274,7 +1274,9 @@ try {
   await checkColdDays(page, base);
   await checkLocalAccess(page, base);
   await checkNature(page, base);
-  await checkReferenceMotion(page, base);
+  const motionPage = await browser.newPage();
+  await checkReferenceMotion(motionPage, base);
+  await motionPage.close();
   await checkPdfExport(page, base, tmp);
   await checkUpperMapInteraction(page, base);
   await checkPlaceSearchAndToolbar(page, base);
