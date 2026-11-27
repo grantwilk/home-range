@@ -632,8 +632,6 @@ function openPlaces(f) {
 }
 const cloudyDaysCredit =
   '<a href="https://psl.noaa.gov/data/gridded/data.narr.html">NOAA PSL · North American Regional Reanalysis</a>';
-const humidityCredit =
-  '<a href="https://www.chelsa-climate.org/datasets/chelsa_climatologies">CHELSA v2.1 humidity</a>';
 const temperatureCredit =
   '<a href="https://arc.ncics.org/nclimgrid-overview/">NOAA nClimGrid</a> · <a href="https://www.ncei.noaa.gov/monitoring-content/data/us/climdiv/monthly/current/county-readme.txt">nClimDiv</a>';
 const hazardCredit =
@@ -669,10 +667,6 @@ const crimeCredits = {
   homicideRate:
     '<a href="https://www.countyhealthrankings.org/health-data/community-conditions/social-and-economic-factors/safety-and-social-support/homicides">County Health Rankings · NCHS (2017–2023)</a>',
 };
-const isHumidity = (key) =>
-  key === "coldHumidity" ||
-  key === "hotHumidity" ||
-  layers[key]?.monthlySeries === "monthlyHumidity";
 // Keep groups intact and preserve their reading order across layout changes.
 function catalogColumns(groups) {
   if (groups.length < 2) return [groups];
@@ -771,18 +765,16 @@ function paintCredits() {
     if (layers[key].hazard) credits.add(hazardCredit);
     else if (key === "cloudyDays" || layers[key].baseKey === "cloudyDays")
       credits.add(cloudyDaysCredit);
-    else if (layers[key].baseKey === "rainfall")
-      credits.add(countySources.rainfall.credit);
-    else if (layers[key].monthlySeries === "monthlyHumidity")
-      credits.add(humidityCredit);
-    else if (countySources[key]) credits.add(countySources[key].credit);
-    else if (key === "populationDensity") credits.add(populationCredit);
+    else if (countySources[layers[key].baseKey])
+      credits.add(countySources[layers[key].baseKey].credit);
+    else if (countySources[key]) {
+      credits.add(countySources[key].credit);
+      if (key === "coldAbsoluteHumidity" || key === "hotAbsoluteHumidity")
+        credits.add(temperatureCredit);
+    } else if (key === "populationDensity") credits.add(populationCredit);
     else if (key === "elevation") credits.add(elevationCredit);
     else if (crimeCredits[key]) credits.add(crimeCredits[key]);
-    else {
-      if (isHumidity(key)) credits.add(humidityCredit);
-      credits.add(temperatureCredit);
-    }
+    else credits.add(temperatureCredit);
   }
   $("credits").innerHTML = [...credits].join(" · ");
   if (localKeys.length)
@@ -1458,7 +1450,7 @@ async function init() {
     cloudyDays,
     rainfall,
     snowfall,
-    humidity,
+    absoluteHumidity,
     population,
     elevation,
     hazards,
@@ -1471,7 +1463,7 @@ async function init() {
       "cloudyDays",
       "rainfall",
       "snowfall",
-      "humidity",
+      "absolute-humidity",
       "population",
       "elevation",
       "hazards",
@@ -1482,7 +1474,7 @@ async function init() {
         `./data/${name}.json` +
         (name === "climate"
           ? "?v=3"
-          : ["humidity", "cloudyDays", "rainfall"].includes(name)
+          : ["cloudyDays", "rainfall"].includes(name)
             ? "?v=2"
             : "");
       const r = await fetch(path);
@@ -1491,6 +1483,8 @@ async function init() {
     }),
   );
   for (const key of landCover.keys) registerCountySource(key, landCover);
+  registerCountySource("coldAbsoluteHumidity", absoluteHumidity);
+  registerCountySource("hotAbsoluteHumidity", absoluteHumidity);
   registerCountySource("rainfall", rainfall);
   registerCountySource("snowfall", snowfall);
   const states = new Map(g.states.map((s) => [s.id, s]));
@@ -1546,7 +1540,7 @@ async function init() {
         ...risk.values,
         ...landscapeValues(landCover, c.id),
         ...climate.counties[c.id],
-        ...humidity.counties[c.id],
+        ...absoluteHumidity.counties[c.id],
         cloudyDays: cloudyDays.counties[c.id],
         rainfall: rainfall.counties[c.id],
         monthlyRainfall: rainfall.monthlyCounties[c.id],

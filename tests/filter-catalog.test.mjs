@@ -37,7 +37,7 @@ test("a subtype search selects available measures, including configurable copies
     ["freezing", "temperatureDays", "coldDays"],
     ["hot days", "temperatureDays", "heatDays"],
     ["november high", "temperature", "novHigh"],
-    ["november humidity", "humidity", "novHumidity"],
+    ["november humidity", "humidity", "novAbsoluteHumidity"],
     ["november rainfall", "annualPrecipitation", "novRainfall"],
     ["november freezing", "temperatureDays", "novColdDays"],
     ["cardiac surgery", "distance", "hospitals"],

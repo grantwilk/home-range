@@ -835,19 +835,29 @@ try {
     "drag upper handle right by touch",
   );
   assert.equal(await exact("cloudyDays", "min").inputValue(), "50");
-  for (const [key, month, rh] of [
-    ["coldHumidity", "December", "47.7%"],
-    ["hotHumidity", "July", "41%"],
+  const humidity = await (
+    await page.request.get(base + "data/absolute-humidity.json")
+  ).json();
+  for (const [key, month] of [
+    ["coldAbsoluteHumidity", "December"],
+    ["hotAbsoluteHumidity", "July"],
   ]) {
     await page.locator("#add-filter").click();
     await pickMeasure(page, "humidity", key);
     await page.locator(`[data-eye="${key}"]`).click();
-    assert.match(await page.locator("#legend-sub").innerText(), /1981–2010/);
-    assert.match(await page.locator("#credits").innerText(), /CHELSA/);
+    assert.ok(
+      (await page.locator("#legend-sub").innerText()).includes(humidity.period),
+    );
+    assert.ok(
+      (await page.locator("#credits").innerText()).includes(humidity.credit),
+    );
     await page.locator("#search").click();
     await page.locator("#query").fill("04013");
     await page.locator("#query").press("Enter");
-    assert.equal(await page.locator(".detailval").innerText(), rh);
+    assert.equal(
+      await page.locator(".detailval").innerText(),
+      humidity.counties["04013"][key].toFixed(1) + " g/m³",
+    );
     assert.match(
       await page.locator(".detailval + p").innerText(),
       new RegExp(month),
@@ -862,25 +872,45 @@ try {
   await page.goto(humidityLink);
   await page.waitForSelector("#loading", { state: "hidden" });
   assert.equal(
-    await page.locator('[data-eye="hotHumidity"]').getAttribute("aria-pressed"),
+    await page
+      .locator('[data-eye="hotAbsoluteHumidity"]')
+      .getAttribute("aria-pressed"),
     "true",
   );
   assert.equal(
     await page
-      .locator('[data-key="coldHumidity"] .switch')
+      .locator('[data-key="coldAbsoluteHumidity"] .switch')
       .getAttribute("aria-checked"),
     "true",
   );
   await page.locator('[data-drop="cloudyDays"]').click();
-  await setBound("coldHumidity", "max", 47.7);
-  await setBound("hotHumidity", "min", 66.5);
+  // Check the intersection and union against the published county values.
+  const coldMax = 4;
+  const hotMin = 16;
+  const readings = Object.values(humidity.counties).map(
+    ({ coldAbsoluteHumidity: cold, hotAbsoluteHumidity: hot }) => ({
+      coldMatches: Number.isFinite(cold) && cold <= coldMax,
+      hotMatches: Number.isFinite(hot) && hot >= hotMin,
+      hotMeasured: Number.isFinite(hot),
+      bothMeasured: Number.isFinite(cold) && Number.isFinite(hot),
+    }),
+  );
+  const both = readings.filter((r) => r.coldMatches && r.hotMatches);
+  const either = readings.filter((r) => r.coldMatches || r.hotMatches);
+  const uncertain = readings.filter(
+    (r) => !r.coldMatches && !r.hotMatches && !r.bothMeasured,
+  );
+  assert.ok(both.length > 0 && either.length > both.length);
+  await setBound("coldAbsoluteHumidity", "max", coldMax);
+  await setBound("hotAbsoluteHumidity", "min", hotMin);
   await page.locator("#all").click();
-  await expectColoredCount(0);
+  await expectColoredCount(both.length);
   await page.locator("#any").click();
-  await expectColoredCount(26);
+  // A matched county still needs a value for the displayed hot-month layer to have a color.
+  await expectColoredCount(either.filter((r) => r.hotMeasured).length);
   assert.equal(
     await page.locator('#areas path[fill="url(#uncertain)"]').count(),
-    2,
+    uncertain.length,
   );
   await pauseActiveFilters(page);
   await page.locator("#all").click();
@@ -997,8 +1027,8 @@ try {
     "heatDays",
     "wetDays",
     "cloudyDays",
-    "coldHumidity",
-    "hotHumidity",
+    "coldAbsoluteHumidity",
+    "hotAbsoluteHumidity",
     "elevation",
     "populationDensity",
   ];

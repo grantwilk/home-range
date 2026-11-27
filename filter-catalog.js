@@ -32,10 +32,14 @@ export const catalog = [
       },
       {
         id: "humidity",
-        name: "Relative Humidity",
+        name: "Absolute Humidity",
         label: "Month",
-        description: "Choose how humid a county is in a given month.",
-        keys: [...monthKeys("coldHumidity"), "coldHumidity", "hotHumidity"],
+        description: "Choose how much water vapor is in the air each month.",
+        keys: [
+          ...monthKeys("coldAbsoluteHumidity"),
+          "coldAbsoluteHumidity",
+          "hotAbsoluteHumidity",
+        ],
       },
       {
         id: "temperatureDays",
@@ -190,8 +194,8 @@ export function optionName(key) {
   if (key === "coast") return "Coast & Great Lakes";
   if (key === "freshwater") return "Larger Rivers or Lakes";
   if (key === "RISK_SCORE") return "All Hazards Combined";
-  if (key === "coldHumidity") return "Coldest Month";
-  if (key === "hotHumidity") return "Hottest Month";
+  if (key === "coldAbsoluteHumidity") return "Coldest Month";
+  if (key === "hotAbsoluteHumidity") return "Hottest Month";
   return layers[key].name.replace(/^Distance to /, "").replace(/ Risk$/, "");
 }
 

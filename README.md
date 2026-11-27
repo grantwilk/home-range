@@ -12,13 +12,13 @@ Open **Add Filter** to browse these groups.
 
 | Group | Filter Types |
 | --- | --- |
-| Climate & Weather | Temperature, Relative Humidity, Hot & Cold Days, Precipitation, Wet Days, Cloudy Days |
+| Climate & Weather | Temperature, Absolute Humidity, Hot & Cold Days, Precipitation, Wet Days, Cloudy Days |
 | Population & Nearby Places | County Population Density, County Crime, Distance to Places |
 | Land & Terrain | Land Cover, Average County Elevation, Distance to Nature |
 | Natural Hazards | Natural Hazard Risk |
 
-- Choose **Temperature**, **Relative Humidity**, **Precipitation**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
-- Pick a calendar month for average humidity, rainfall, or counts of hot, cold, wet, and cloudy days. Use **Full Year** for annual rain or day counts. Snowfall covers a full snow season. For example, choose **Relative Humidity → November** and set the range to **0–40%**.
+- Choose **Temperature**, **Absolute Humidity**, **Precipitation**, **Distance to Places**, **Distance to Nature**, or **Natural Hazard Risk** and select the measurement or feature on its card. You can add another card of the same type. For example, set independent limits for a grocery store, a river, and a park.
+- Pick a calendar month for average humidity, rainfall, or counts of hot, cold, wet, and cloudy days. Use **Full Year** for annual rain or day counts. Snowfall covers a full snow season. For example, choose **Absolute Humidity → November** to find counties averaging up to 8 grams of water vapor per cubic meter of air. [Open the November Map](https://grantwilk.com/home-range/?novAbsoluteHumidity=0..8&layer=novAbsoluteHumidity&match=all)
 - Click the eye or layer name to color the map. Its switch applies or pauses the filter. Use **×** to remove the card.
 - Drag either handle or enter a minimum and maximum. Editing a bound enables the filter. Both endpoints are inclusive. **Hot & Cold Days** lets you choose a daily high threshold for hot days or a daily low threshold for cold days. Add a card for each threshold you care about. For example, combine [up to 14 days below 0°F and up to 30 days below 10°F](https://grantwilk.com/home-range/?coldDays=0..14&coldDays.cutoff=0&coldDays~2=0..30&coldDays~2.cutoff=10&layer=coldDays~2&match=all) using **Match All**. City distance cards can also use different population ranges, and each custom distance card can use its own list of places.
 - **County Population Density** filters on residents per square mile of land. The slider has finer steps for rural counties, and you can enter limits to two decimal places. County details also show the total number of residents.
@@ -39,7 +39,7 @@ To edit a link by hand, use the filter key followed by an inclusive `minimum..ma
 - `heatDays=0..30&heatDays.cutoff=95` selects counties averaging up to 30 days per year with highs at or above 95°F. Each Hot Days or Cold Days card uses its own threshold for filtering, map colors, and PDF export.
 - [Cold days below −30°F, 0–14 days per year](https://grantwilk.com/home-range/?coldDays=0..14&coldDays.cutoff=-30&layer=coldDays) uses the average annual number of days when the countywide daily low fell strictly below −30°F. Choose any whole-degree threshold from −60°F to 60°F.
 - `rainfall=25..45&snowfall=0..50` selects counties averaging 25–45 inches of rain and up to 50 inches of new snow per year.
-- `novHumidity=0..40&novRainfall=1..4` combines a November average humidity of up to 40% with 1–4 inches of rain that month. Month-specific counts use keys such as `novWetDays`, `novCloudyDays`, and `novColdDays`.
+- `novAbsoluteHumidity=0..8&novRainfall=1..4` combines up to 8 grams of water vapor per cubic meter of November air with 1–4 inches of rain that month. When an old link uses relative humidity, choose a new range in g/m³. The replacement opens paused unless the link already specifies an absolute humidity filter for that month. Month-specific counts use keys such as `novWetDays`, `novCloudyDays`, and `novColdDays`.
 - `cloudyDays=0..75` selects counties averaging at most 75 cloudy days per year. Old `cloud` percentage links open with the replacement filter paused so you can choose a range in days.
 - `populationDensity=10..100` selects counties with 10–100 residents per square mile of land. Links with a former `population` total open with density paused unless an explicit density range is also present.
 - `filters=none` opens an empty filter panel. Shared links restore the cards included in the link.
@@ -55,7 +55,7 @@ Geography uses 2017 boundaries for 3,142 counties and equivalents across the 50 
 | Measure | Period | Spatial coverage |
 | --- | --- | --- |
 | Average daily low and high for every calendar month (24 filter choices) | 1991–2020 | 3,140 counties |
-| Mean relative humidity by calendar month | 1981–2010 | 3,142 counties. Local coldest/hottest month choices cover the 3,140 with NOAA temperature profiles. |
+| Mean absolute humidity by calendar month | 1991–2020 | 3,138 counties in every month. Local coldest/hottest month choices cover 3,136 with NOAA temperature profiles. |
 | Hot days (daily high at or above threshold), cold days (daily low below threshold), and wet-day frequency by month or year | 1991–2020 | 3,107 counties |
 | Monthly and annual rainfall | 1991–2020 | 3,142 counties |
 | Annual snowfall | 17 complete snow seasons from 2008–09 through 2025–26 | 2,966 counties in the contiguous U.S. |
@@ -81,7 +81,7 @@ Snowfall measures the depth of newly fallen snow accumulated during an October�
 
 **Cloudy Days** counts a day when the county’s average cloud cover reaches 80%. The filter uses NOAA’s North American Regional Reanalysis, which combines weather observations with a model on a roughly 32 km grid. For each UTC day, Home Range averages the grid values across the county, counts qualifying days for the selected calendar month or year, then averages those counts over 1991–2020. Nighttime contributes to the daily mean. All 3,142 counties have at least 95% of their mapped area represented on every day of the period. A day below the threshold can still be partly cloudy. [NOAA North American Regional Reanalysis](https://www.ncei.noaa.gov/products/weather-climate-models/north-american-regional) · [Daily Cloud Data](https://psl.noaa.gov/thredds/dodsC/Datasets/NARR/Dailies/monolevel/tcdc.1991.nc.html)
 
-Choose **Add Filter → Relative Humidity**, select any month, and set the acceptable average in percent. **Coldest Month** and **Hottest Month** use each county’s 1991–2020 NOAA temperature profile to select its calendar month. All humidity values are 1981–2010 means from CHELSA v2.1’s modeled near-surface relative humidity, weighted by land-pixel area across each county. [CHELSA Climatologies](https://www.chelsa-climate.org/datasets/chelsa_climatologies) · [Humidity Dataset Methods](https://doi.org/10.5194/essd-14-5573-2022)
+Choose **Add Filter → Absolute Humidity** to select how much water vapor the air holds in a typical month. The slider measures grams per cubic meter of air (g/m³). Lower values mean drier air. You can select a calendar month or use **Coldest Month** and **Hottest Month** to follow each county’s local seasons. Home Range calculates water vapor density from TerraClimate’s vapor pressure and the midpoint of its average high and low temperatures. It does this for each month and year on the native grid, then averages the results for each calendar month and weights them by area within the county. Jefferson, Orleans, St. John the Baptist, and St. Tammany parishes in Louisiana have less than 95% coverage and show **No data**. These historical averages can hide short humid or dry spells. [TerraClimate Data and Methods](https://www.climatologylab.org/terraclimate.html)
 
 ## County Landscapes
 
@@ -182,7 +182,7 @@ Committed JSON files are sufficient for hosting. Rebuilding the scientific data 
 | `uv run scripts/elevation.py --cache /tmp/home-range-elevation` | Area-weighted terrain elevations in feet for the 2017 county boundaries |
 | `uv run scripts/population.py` | July 2025 Census resident estimates matched to the county map and reconciled against published state totals |
 | `uv run scripts/build_climate.py --cache /tmp/home-range-epinoaa` | Temperature and day-count statistics from 360 monthly county files and the included Alaska/Hawaii monthly extract |
-| `uv run scripts/humidity.py --cache /tmp/home-range-humidity` | County mean relative humidity for all 12 months and the local seasonal extremes |
+| `uv run scripts/humidity.py --cache /tmp/home-range-humidity` | County mean absolute humidity for all 12 months and the local seasonal extremes |
 | `uv run scripts/land_cover.py --cache /tmp/home-range-landcover` | County percentages from native USGS land cover grids |
 | `uv run scripts/rainfall.py --cache /tmp/home-range-rainfall` | Monthly and annual liquid precipitation from monthly ERA5 data |
 | `uv run scripts/snowfall.py --cache /tmp/home-range-snowfall` | Mean seasonal depth of new snow from NOAA’s gridded snowfall analysis |

@@ -96,18 +96,19 @@ const layer = (
   colors,
   domain,
 });
+const humidityBins = [3, 6, 9, 12, 16, 20];
 function seasonalHumidity(season) {
   return layer(
-    season + "-Month Relative Humidity",
-    "%",
+    season + "-Month Absolute Humidity",
+    "g/m³",
     "droplet",
-    "1981–2010",
-    "Average near-surface relative humidity in the county’s " +
+    climate,
+    "Grams of water vapor per cubic meter of air in the county’s " +
       season.toLowerCase() +
-      " month. Humidity uses 1981–2010 averages. The month is based on 1991–2020 temperatures.",
-    [40, 50, 60, 65, 70, 75],
+      " month, identified from 1991–2020 average temperatures.",
+    humidityBins,
     moisture,
-    [0, 100],
+    [0, 30],
   );
 }
 export const months =
@@ -162,8 +163,8 @@ export const layers = {
     thermal,
     [40, 115],
   ),
-  coldHumidity: seasonalHumidity("Coldest"),
-  hotHumidity: seasonalHumidity("Hottest"),
+  coldAbsoluteHumidity: seasonalHumidity("Coldest"),
+  hotAbsoluteHumidity: seasonalHumidity("Hottest"),
   heatDays: {
     ...layer(
       "Hot Days",
@@ -292,10 +293,10 @@ export const layers = {
 };
 // Each key identifies one source series and calendar month, including in share URLs.
 const calendarClimate = {
-  coldHumidity: {
-    suffix: "Humidity",
-    label: "Relative Humidity",
-    bins: [40, 50, 60, 65, 70, 75],
+  coldAbsoluteHumidity: {
+    suffix: "AbsoluteHumidity",
+    label: "Absolute Humidity",
+    bins: humidityBins,
   },
   rainfall: {
     suffix: "Rainfall",
@@ -334,12 +335,16 @@ for (const [baseKey, { suffix, label, bins }] of Object.entries(
     layers[key] = {
       ...layers[baseKey],
       name: `Average ${name} ${label}`,
-      unit: days ? "days/mo" : baseKey === "rainfall" ? "in/mo" : "%",
+      unit: days
+        ? "days/mo"
+        : baseKey === "rainfall"
+          ? "in/mo"
+          : layers[baseKey].unit,
       domain: days
         ? [0, monthLimits[month]]
         : baseKey === "rainfall"
           ? [0, 35]
-          : [0, 100],
+          : layers[baseKey].domain,
       bins,
       baseKey,
       month,
@@ -349,14 +354,17 @@ for (const [baseKey, { suffix, label, bins }] of Object.entries(
   });
 }
 export const poles = {
-  coldHumidity: ["Less humid", "More humid"],
-  hotHumidity: ["Less humid", "More humid"],
+  coldAbsoluteHumidity: ["Less humid", "More humid"],
+  hotAbsoluteHumidity: ["Less humid", "More humid"],
   wetDays: ["Drier", "Wetter"],
   ...Object.fromEntries(
     monthKeys("wetDays").map((key) => [key, ["Drier", "Wetter"]]),
   ),
   ...Object.fromEntries(
-    monthKeys("coldHumidity").map((key) => [key, ["Less humid", "More humid"]]),
+    monthKeys("coldAbsoluteHumidity").map((key) => [
+      key,
+      ["Less humid", "More humid"],
+    ]),
   ),
 };
 // These measures take a second input that changes what is being measured.
@@ -567,7 +575,15 @@ function mergeRanges(ranges, mode, warnings) {
 }
 
 // A threshold cannot carry across a change of units.
+const oldHumidityKeys = new Map(
+  [
+    ...monthKeys("coldAbsoluteHumidity"),
+    "coldAbsoluteHumidity",
+    "hotAbsoluteHumidity",
+  ].map((key) => [key.replace("AbsoluteHumidity", "Humidity"), key]),
+);
 const replacements = new Map([
+  ...oldHumidityKeys,
   ["cloud", "cloudyDays"],
   ["population", "populationDensity"],
 ]);
@@ -660,6 +676,20 @@ export function parseView(raw, warn = () => {}) {
         ? "This link included a county population total. Its saved population density range and switch setting have been kept."
         : "This link used total residents. Population density measures people per square mile of land. Its filter is paused so you can choose a new range.",
     );
+  const humidityChanges = [...migrated].filter((key) =>
+    oldHumidityKeys.has(key),
+  );
+  if (humidityChanges.length) {
+    const reset = humidityChanges.some(
+      (key) => !linkedKeys.has(replacements.get(key)),
+    );
+    warnings.add(
+      "This link used relative humidity (%). Absolute humidity measures grams of water vapor per cubic meter of air (g/m³). " +
+        (reset
+          ? "The old percentage filters are paused at the full range. Choose new limits to enable them."
+          : "Your saved absolute humidity settings have been kept."),
+    );
+  }
   setViewedFilter(
     state,
     state.county.find((f) => filterId(f) === desired) ?? state.county[0],
@@ -671,6 +701,7 @@ export const fmt = (v, unit) =>
   v === null
     ? "No data"
     : v.toLocaleString("en-US", {
+        minimumFractionDigits: unit === "g/m³" ? 1 : 0,
         maximumFractionDigits:
           unit === "/ 100" || unit === "people/mi²" ? 2 : 1,
       }) + (unit === "°F" ? "°F" : unit === "%" ? "%" : " " + unit);

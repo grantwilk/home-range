@@ -69,17 +69,27 @@ function countyGroups(county, state, periodFor) {
     return fact(
       label + (period ? " · " + period : ""),
       countyReading(county, temp) + " / " + countyReading(county, humidity),
-      stat + " temperature / relative humidity",
+      stat + " temperature / absolute humidity",
     );
   };
+  const tempPeriod = periodFor("janLow", county);
+  const humidityPeriod = periodFor("coldAbsoluteHumidity", county);
+  const climatePeriod =
+    tempPeriod === humidityPeriod
+      ? `${tempPeriod} averages.`
+      : `Temperature · ${tempPeriod}. Absolute humidity · ${humidityPeriod}.`;
   const climate = `<h4>Temperature &amp; Humidity</h4>${temperatureChart(v)}
     ${monthTable(v, [
       ["monthlyLow", "Avg. Low", "°F"],
       ["monthlyHigh", "Avg. High", "°F"],
-      ["monthlyHumidity", "Avg. Humidity", "%"],
+      [
+        "monthlyAbsoluteHumidity",
+        "Absolute Humidity",
+        layers.coldAbsoluteHumidity.unit,
+      ],
     ])}
-    <p class="profile-note">Temperature · 1991–2020. Relative humidity · 1981–2010.</p>
-    <dl class="profile-facts">${seasonalRow("Coldest Month", "coldMonth", "coldLow", "coldHumidity")}${seasonalRow("Hottest Month", "hotMonth", "hotHigh", "hotHumidity")}</dl>
+    <p class="profile-note">${esc(climatePeriod)} Humidity is measured in grams of water vapor per cubic meter of air.</p>
+    <dl class="profile-facts">${seasonalRow("Coldest Month", "coldMonth", "coldLow", "coldAbsoluteHumidity")}${seasonalRow("Hottest Month", "hotMonth", "hotHigh", "hotAbsoluteHumidity")}</dl>
     <h4>Rain &amp; Cloud by Month</h4>${monthTable(v, [
       ["monthlyRainfall", "Rainfall", "in"],
       ["monthlyWetDays", "Wet Days", "days"],
@@ -223,9 +233,9 @@ function showReadings(root, county, point, result, state, periodFor, dayLoad) {
         countyReading(county, state.layer, cutoffFor(state, state.layer));
     const season = {
       coldLow: "coldMonth",
-      coldHumidity: "coldMonth",
+      coldAbsoluteHumidity: "coldMonth",
       hotHigh: "hotMonth",
-      hotHumidity: "hotMonth",
+      hotAbsoluteHumidity: "hotMonth",
     }[state.layer];
     const month = season && months[(county?.values[season] ?? 0) - 1];
     current.innerHTML = `<span class="profile-icon">${icon(measure.icon)}</span><div><strong>${esc(metricName(state.layer, viewed?.cutoff))}</strong><div class="detailval">${esc(reading)}</div><p>${[month, periodFor(state.layer, county)].filter(Boolean).map(esc).join(" · ")}</p></div>`;

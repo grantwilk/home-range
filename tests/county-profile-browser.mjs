@@ -101,7 +101,35 @@ export async function checkCountyProfile(page, base) {
 }
 
 export async function checkMonthlyClimate(page, base) {
-  // Maricopa’s CHELSA relative humidity is 43.1% in November, 41.0% in July.
+  // Previous shares stored percentages. A saved 10–11% must not quietly become 10–11 g/m³.
+  await page.goto(base + "?novHumidity=10..11&janLow=0..20&layer=novHumidity");
+  await page.locator("dialog[open]").waitFor();
+  assert.match(
+    await page.locator("#dialog-body").innerText(),
+    /relative humidity/i,
+  );
+  await page.locator("#close").click();
+  const migrated = page.locator('[data-key="novAbsoluteHumidity"]');
+  assert.equal(
+    await migrated.locator(".switch").getAttribute("aria-checked"),
+    "false",
+  );
+  assert.equal(
+    await migrated.locator('.num[data-bound="min"]').inputValue(),
+    "0",
+  );
+  assert.equal(
+    await migrated.locator('.num[data-bound="max"]').inputValue(),
+    "30",
+  );
+  assert.equal(
+    await page
+      .locator('[data-key="janLow"] .switch')
+      .getAttribute("aria-checked"),
+    "true",
+  );
+  assert.equal(new URL(page.url()).searchParams.has("novHumidity"), false);
+
   await page.goto(base + "?filters=none");
   const add = async (key) => {
     await page.locator("#add-filter").click();
@@ -112,26 +140,51 @@ export async function checkMonthlyClimate(page, base) {
       .locator("[data-subtype]")
       .selectOption(key);
   };
-  await add("novHumidity");
-  const november = page.locator('[data-key="novHumidity"]');
+  await add("novAbsoluteHumidity");
+  const november = page.locator('[data-key="novAbsoluteHumidity"]');
   const upper = november.locator('.num[data-bound="max"]');
-  await upper.fill("40");
+  await upper.fill("4");
   await upper.press("Tab");
-  await add("julHumidity");
+  await add("julAbsoluteHumidity");
   await november.locator("[data-eye]").click();
   assert.equal(await november.getByRole("slider").count(), 2);
-  assert.equal(await upper.inputValue(), "40");
+  assert.equal(await upper.inputValue(), "4");
   const share = new URL(page.url());
-  assert.equal(share.searchParams.get("novHumidity"), "0..40");
-  assert.equal(share.searchParams.get("layer"), "novHumidity");
-  assert.ok(share.searchParams.has("julHumidity"));
+  assert.equal(share.searchParams.get("novAbsoluteHumidity"), "0..4");
+  assert.equal(share.searchParams.get("layer"), "novAbsoluteHumidity");
+  assert.ok(share.searchParams.has("julAbsoluteHumidity"));
   await page.reload();
   await page.locator("#search").click();
   await page.locator("#query").fill("04013");
   await page.locator('#suggest [data-place="c04013"]').click();
-  const row = page.locator('#county-matches [data-filter-id="novHumidity"]');
-  assert.equal(await row.locator(".match-reading").innerText(), "43.1%");
+  const row = page.locator(
+    '#county-matches [data-filter-id="novAbsoluteHumidity"]',
+  );
+  // A separate extraction of the Maricopa polygon from the native climate grid.
+  const maricopaNovember = "5.8 g/m³";
+  assert.equal(
+    await row.locator(".match-reading").innerText(),
+    maricopaNovember,
+  );
   assert.equal(await row.locator(".match-status").innerText(), "Outside");
+  const weather = page.locator(
+    '#county-profile details[data-group="Climate & Weather"]',
+  );
+  await weather.locator("summary").click();
+  const monthly = weather.getByRole("table").first();
+  const novemberValues = monthly.getByRole("row").filter({
+    has: page.getByRole("rowheader", { name: "Nov", exact: true }),
+  });
+  assert.equal(
+    await novemberValues.getByRole("cell").last().innerText(),
+    maricopaNovember,
+  );
+  const climateNote = monthly.locator("+ .profile-note");
+  assert.match(await climateNote.innerText(), /1991–2020/);
+  assert.match(
+    await climateNote.innerText(),
+    /grams of water vapor per cubic meter/i,
+  );
   await page.locator("#close").click();
 
   // Hold one real November file in transit. The county modal should update

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readViewUrl, writeViewUrl } from "../view-url.js";
 import {
   defaults,
+  monthKeys,
+  usesRetiredMeasure,
   freshFilter,
   parseView,
   layers,
@@ -365,4 +367,58 @@ test("population totals never become density bounds in a shared view", () => {
   );
   assert.deepEqual(mixed.county, [f("populationDensity", 0.01, 0.03)]);
   assert.equal(mixed.mode, "any");
+});
+
+test("relative humidity shares restore each chosen month as a paused absolute range", () => {
+  for (const key of [
+    ...monthKeys("coldAbsoluteHumidity"),
+    "coldAbsoluteHumidity",
+    "hotAbsoluteHumidity",
+  ]) {
+    const oldKey = key.replace("AbsoluteHumidity", "Humidity");
+    const other = f("janLow", -8.2, 14);
+    const links = [
+      "?" + oldKey + "=26..45&janLow=-8.2..14&match=any&layer=" + oldKey,
+      "#view=" +
+        encodeURIComponent(
+          JSON.stringify({
+            layer: oldKey,
+            mode: "any",
+            county: [{ key: oldKey, min: 26, max: 45, on: true }, other],
+          }),
+        ),
+    ];
+    for (const link of links) {
+      const warnings = [];
+      const url = new URL(link, base);
+      const raw = readViewUrl(url, assert.fail);
+      assert.ok(usesRetiredMeasure(raw));
+      const state = parseView(raw, (message) => warnings.push(message));
+      assert.equal(state.layer, key);
+      assert.equal(state.mode, "any");
+      assert.deepEqual(state.county, [freshFilter(key), other]);
+      assert.deepEqual(layers[key].domain, [0, 30]);
+      assert.equal(layers[key].unit, "g/m³");
+      assert.match(warnings.join(" "), /relative humidity.*g\/m³.*paused/i);
+      const next = writeViewUrl(url, state, [1, 0, 0]);
+      assert.equal(next.searchParams.has(oldKey), false);
+      assert.deepEqual(read(next), state);
+    }
+  }
+});
+
+test("a current absolute humidity range wins over percentages in a mixed link", () => {
+  const key = "novAbsoluteHumidity";
+  for (const filters of [
+    "novHumidity=0..85&novAbsoluteHumidity=4.2..8.6",
+    "novAbsoluteHumidity=4.2..8.6&novHumidity=0..85",
+  ]) {
+    const warnings = [];
+    const state = read("?" + filters + "&layer=novHumidity", (m) =>
+      warnings.push(m),
+    );
+    assert.equal(state.layer, key);
+    assert.deepEqual(state.county, [f(key, 4.2, 8.6)]);
+    assert.match(warnings.join(" "), /settings have been kept/);
+  }
 });

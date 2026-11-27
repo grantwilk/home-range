@@ -1,19 +1,22 @@
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["exactextract==0.3.0", "rasterio==1.5.2", "geopandas==1.2.0"]
+# dependencies = ["exactextract==0.3.0", "geopandas==1.2.0", "netCDF4==1.7.5.1.post1"]
 # ///
-"""Build the 12 calendar-month relative humidity normals for each county.
+"""Build county absolute humidity normals. Run with uv run scripts/humidity.py --cache DIR.
 
-Run with uv run scripts/humidity.py --cache /tmp/home-range-humidity.
-The 12 native global rasters occupy about 5.4 GB.
+The 90 native TerraClimate files require approximately 16 GB of cache space.
 """
 
 import argparse
+import csv
 import json
-from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
-import rasterio
+import geopandas as gpd
+import numpy as np
+import pandas as pd
 from county_raster import (
     BOUNDARIES,
     MIN_COVERAGE,
@@ -21,97 +24,237 @@ from county_raster import (
     county_boundaries,
     verified_download,
 )
-from exactextract.raster import RasterioRasterSource
+from exactextract.raster import NumPyRasterSource
+from netCDF4 import Dataset, num2date
+from pyproj import CRS
 
-DATA = Path(__file__).resolve().parents[1] / "data"
-SOURCE = "https://os.unil.cloud.switch.ch/chelsa02/chelsa/global/climatologies/hurs/1981-2010/"
-TEMPLATE = SOURCE + "CHELSA_hurs_{month:02d}_1981-2010_V.2.1.tif"
-SHA256 = {
-    1: "8fba5d20c34aa793364106eafe5dfbdd5c1acc35223a148f0df20c9095cdb9be",
-    2: "1df5b5bfb8883f11f5a80a988df4cff5d1020f7a81cd8264f8f41e3b331bd17a",
-    3: "2b5f5ea810787088d56c0d7e9fa3cd236d6817a5e91ea343b2e8569ee133e984",
-    4: "4d7756c04b6ad90f16b70fec47e512d80060ac5c79d69cfbe8c33a6427027eff",
-    5: "c9ea5fd18f21ffd3d2673190403c3be685243403272dfd4b66ae2467a46b59ae",
-    6: "a6a4b55b13c2293a4411751e77e4c482516161d142365bdd6640db837243c837",
-    7: "e1bdace41155353fa600e6f1a51a1bda5bdb9f86585392a5e8d2368a95c3e379",
-    8: "f0c4d80eade2d324e285240fab0e13932091b98df875d39887cb876a41ac0bca",
-    9: "d7b905714d7291f87664adf8c41d71374d4337c9b3b78dca20d3777c812e4a10",
-    10: "7be8267ff03c91eb90abf669e600c4a4552c3f51c1024a232134e9dc3777b64c",
-    11: "0460775b65cfa66688edc6334f582ab6878e9500ac041a61e0e29a78ff1fec5e",
-    12: "4420a47ca900873b01c17c0ca587fc59fa937e80c772a631ce4a379a178904c9",
-}
-FIELDS = {"coldHumidity": "coldMonth", "hotHumidity": "hotMonth"}
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "data"
+YEARS = range(1991, 2021)
+VARIABLES = {"vap": "kPa", "tmin": "degC", "tmax": "degC"}
+SOURCE = (
+    "https://thredds.northwestknowledge.net/thredds/fileServer/TERRACLIMATE_ALL/data/"
+)
+CHECKSUMS = ROOT / "scripts/sources/absolute-humidity-sha256.csv"
+FIELDS = {"coldAbsoluteHumidity": "coldMonth", "hotAbsoluteHumidity": "hotMonth"}
+RESOLUTION = 1 / 30
+GEOGRAPHIC_CRS = CRS.from_epsg(4326).to_wkt()
 
 
-def read_month(month, cache):
-    return verified_download(
-        cache / f"month-{month:02d}.tif", TEMPLATE.format(month=month), SHA256[month]
+def absolute_humidity(pressure, low, high):
+    """Monthly mean water-vapor density (g/m³) from actual vapor pressure (kPa) and °C."""
+    pressure, low, high = [
+        np.ma.asarray(a, dtype=np.float64).filled(np.nan) for a in (pressure, low, high)
+    ]
+    kelvin = 273.15 + (low + high) / 2
+    valid = (pressure >= 0) & (kelvin > 0) & (low <= high)
+    return np.divide(
+        pressure * 1_000_000,
+        461.5 * kelvin,
+        where=valid,
+        out=np.full_like(kelvin, np.nan),
     )
 
 
-def validate_metadata(raster):
-    tags = raster.tags()
-    expected = {
-        "variable": "hurs",
-        "variable_unit": "percent",
-        "datetime": "1981-2010",
-        "source_id": "CHELSA_V2.1",
-    }
-    if any(tags.get(k) != v for k, v in expected.items()):
-        raise ValueError("Unexpected humidity variable, unit, period, or version.")
+def validate_grid(dataset, year, key, lat, lon):
+    variable = dataset[key]
+    time = dataset["time"]
+    dates = num2date(time[:], time.units, time.calendar)
     if (
-        raster.crs.to_epsg() != 4326
-        or raster.scales != (0.01,)
-        or raster.offsets != (0.0,)
-        or raster.nodata != 65535
+        dataset.version != "v1.1"
+        or variable.units != VARIABLES[key]
+        or variable.dimensions != ("time", "lat", "lon")
+        or [(d.year, d.month) for d in dates]
+        != [(year, month) for month in range(1, 13)]
+        or not np.array_equal(dataset["lat"][:], lat)
+        or not np.array_equal(dataset["lon"][:], lon)
     ):
-        raise ValueError("Unexpected CHELSA raster encoding.")
+        raise ValueError(
+            f"Unexpected TerraClimate version, units, grid, or dates: {year} {key}"
+        )
 
 
-def aggregate_month(raster, polygons):
-    # RasterioRasterSource masks nodata and applies the GeoTIFF's 0.01 scale.
-    # default_value treats missing pixels as present only in the denominator.
-    areas = area_totals(RasterioRasterSource(raster), polygons)
-    result = {}
-    for fips, (total, valid, area) in areas.iterrows():
-        fraction = valid / area if area > 0 else 0
-        mean = total / valid if fraction >= MIN_COVERAGE else None
-        if mean is not None and not 0 <= mean <= 100.00001:
-            raise ValueError(f"Out-of-range mean relative humidity for {fips}: {mean}")
-        result[fips] = round(float(mean), 1) if mean is not None else None
-    return result
+@dataclass
+class Region:
+    polygons: gpd.GeoDataFrame
+    rows: slice
+    columns: slice
+    extent: tuple[float, float, float, float]
+    sums: np.ndarray
 
 
-def build(climate, polygons, cache):
-    # Process components separately for multipart areas crossing the date line.
-    polygons = (
+def county_regions(polygons, lat, lon):
+    if not (
+        np.allclose(np.diff(lat), -RESOLUTION, atol=1e-9, rtol=0)
+        and np.allclose(np.diff(lon), RESOLUTION, atol=1e-9, rtol=0)
+    ):
+        raise ValueError("Unexpected native TerraClimate cell size or orientation")
+    west, north = lon[0] - RESOLUTION / 2, lat[0] + RESOLUTION / 2
+    parts = (
         polygons[["GEOID", "geometry"]]
         .to_crs(4326)
         .explode(index_parts=False)
         .reset_index(drop=True)
     )
-    counties = {
-        fips: {"monthlyHumidity": []} for fips in sorted(polygons.GEOID.unique())
-    }
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        files = pool.map(lambda m: read_month(m, cache), range(1, 13))
-        for path in files:
-            with rasterio.open(path) as raster:
-                validate_metadata(raster)
-                values = aggregate_month(raster, polygons)
-            for fips, record in counties.items():
-                record["monthlyHumidity"].append(values[fips])
+    regions = np.select(
+        [
+            parts.GEOID.str.startswith("02") & (parts.bounds.minx > 0),
+            parts.GEOID.str.startswith("02"),
+            parts.GEOID.str.startswith("15"),
+        ],
+        ["aleutians-east", "alaska", "hawaii"],
+        default="contiguous",
+    )
+    result = []
+    for _, group in parts.groupby(regions):
+        xmin, ymin, xmax, ymax = group.total_bounds
+        x0 = int(np.floor((xmin - west) / RESOLUTION))
+        x1 = int(np.ceil((xmax - west) / RESOLUTION))
+        y0 = int(np.floor((north - ymax) / RESOLUTION))
+        y1 = int(np.ceil((north - ymin) / RESOLUTION))
+        if not (0 <= x0 < x1 <= len(lon) and 0 <= y0 < y1 <= len(lat)):
+            raise ValueError("County bounds extend outside the native grid")
+        extent = (
+            west + RESOLUTION * x0,
+            north - RESOLUTION * y1,
+            west + RESOLUTION * x1,
+            north - RESOLUTION * y0,
+        )
+        result.append(
+            Region(
+                group,
+                slice(y0, y1),
+                slice(x0, x1),
+                extent,
+                np.zeros((12, y1 - y0, x1 - x0)),
+            )
+        )
+    return result
 
-    # Keep the two temperature-selected months used by existing shared links.
+
+def annual_files(cache):
+    with CHECKSUMS.open() as stream:
+        hashes = {
+            (int(row["year"]), row["variable"]): row["sha256"]
+            for row in csv.DictReader(stream)
+        }
+    if set(hashes) != {(year, key) for year in YEARS for key in VARIABLES}:
+        raise ValueError("Incomplete set of annual source checksums")
+    for year in YEARS:
+        files = {}
+        for key in VARIABLES:
+            name = f"TerraClimate_{key}_{year}.nc"
+            files[key] = verified_download(
+                cache / name, SOURCE + name, hashes[year, key]
+            )
+        yield year, files
+
+
+def accumulate(regions, inputs):
+    for region in regions:
+        # Limit temporary arrays to one native chunk height at a time.
+        for start in range(region.rows.start, region.rows.stop, 128):
+            stop = min(start + 128, region.rows.stop)
+            window = (slice(None), slice(start, stop), region.columns)
+            readings = [inputs[key][key][window] for key in ("vap", "tmin", "tmax")]
+            offset = start - region.rows.start
+            region.sums[:, offset : offset + stop - start] += absolute_humidity(
+                *readings
+            )
+
+
+def county_means(stats):
+    totals = pd.concat(stats).groupby(level=0).sum()
+    return {
+        fips: round(float(total / valid), 1)
+        if area > 0 and valid >= MIN_COVERAGE * area
+        else None
+        for fips, (total, valid, area) in totals.iterrows()
+    }
+
+
+def build(climate, polygons, sources):
+    regions = []
+    seen = []
+    for year, files in sources:
+        with ExitStack() as stack:
+            inputs = {
+                key: stack.enter_context(Dataset(path)) for key, path in files.items()
+            }
+            if not regions:
+                lat, lon = (
+                    np.asarray(inputs["vap"][axis][:]) for axis in ("lat", "lon")
+                )
+                regions = county_regions(polygons, lat, lon)
+            for key, dataset in inputs.items():
+                validate_grid(dataset, year, key, lat, lon)
+            accumulate(regions, inputs)
+        seen.append(year)
+        print(f"Processed {year}", flush=True)
+    if seen != list(YEARS):
+        raise ValueError(
+            "Expected exactly one input triplet per year, 1991 through 2020"
+        )
+    counties = {
+        fips: {"monthlyAbsoluteHumidity": []}
+        for fips in sorted(polygons.GEOID.unique())
+    }
+    for month in range(12):
+        stats = []
+        for region in regions:
+            xmin, ymin, xmax, ymax = region.extent
+            # NaN propagation requires all three inputs for all 30 years at each pixel.
+            source = NumPyRasterSource(
+                region.sums[month] / len(YEARS),
+                xmin=xmin,
+                ymin=ymin,
+                xmax=xmax,
+                ymax=ymax,
+                nodata=np.nan,
+                srs_wkt=GEOGRAPHIC_CRS,
+            )
+            stats.append(area_totals(source, region.polygons))
+        for fips, value in county_means(stats).items():
+            counties[fips]["monthlyAbsoluteHumidity"].append(value)
     for fips, record in counties.items():
         for field, month_key in FIELDS.items():
             month = climate.get(fips, {}).get(month_key)
             if month is not None and month not in range(1, 13):
                 raise ValueError(f"Invalid {month_key} for {fips}: {month}")
             record[field] = (
-                None if month is None else record["monthlyHumidity"][month - 1]
+                None if month is None else record["monthlyAbsoluteHumidity"][month - 1]
             )
     return counties
+
+
+def payload(counties):
+    return {
+        "title": "Monthly Absolute Humidity",
+        "period": "1991–2020",
+        "unit": "g/m³",
+        "credit": "Abatzoglou et al. · Climatology Lab · TerraClimate v1.1",
+        "license": "CC BY 4.0",
+        "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+        "source": "https://www.climatologylab.org/terraclimate.html",
+        "citation": "Abatzoglou, J.T., Hegewisch, K.C., Yin, C. and D.A. Kalashnikov (2026). TerraClimate v1.1, An Updated Global Climate and Climatic Water Balance Dataset with Climate Scenarios. Scientific Data.",
+        "sourceAcknowledgments": "TerraClimate v1.1 uses CHELSA climatologies v2.1 (Karger et al., 2021), CRU TS (Harris et al., 2020), and ERA5 (Hersbach et al., 2020).",
+        "originalPaper": "https://doi.org/10.1038/sdata.2017.191",
+        "sourceTemplate": SOURCE + "TerraClimate_{variable}_{year}.nc",
+        "boundaries": BOUNDARIES,
+        "method": "Estimated near-surface water-vapor density in grams per cubic meter, January through December. For each native 1/30-degree TerraClimate v1.1 pixel and month-year, divide actual vapor pressure (Pa) by 461.5 times absolute air temperature (K), then convert kg/m³ to g/m³. Monthly temperature is the midpoint of mean daily minimum and maximum temperatures. Using monthly mean inputs approximates the mean of daily densities. Average each calendar month across 1991–2020, then weight pixels by the spherical area intersecting 2017 Census 1:500,000 county polygons. Each published value requires complete 30-year pixel records covering at least 95% of the county polygon. The seasonal values select the county’s NOAA 1991–2020 coldest or hottest month. Rounded to 0.1 g/m³.",
+        "coverage": {
+            field: sum(row[field] is not None for row in counties.values())
+            for field in FIELDS
+        },
+        "monthlyCoverage": [
+            sum(
+                row["monthlyAbsoluteHumidity"][i] is not None
+                for row in counties.values()
+            )
+            for i in range(12)
+        ],
+        "counties": counties,
+    }
 
 
 def main():
@@ -122,41 +265,17 @@ def main():
     polygons = county_boundaries(args.cache)
     climate = json.loads((DATA / "climate.json").read_text())
     if climate["period"] != [1991, 2020]:
-        raise ValueError(
-            "NOAA temperature period changed; review month-selection metadata."
-        )
-    counties = build(climate["counties"], polygons, args.cache)
-    payload = {
-        "title": "Average Monthly Relative Humidity",
-        "period": "1981–2010",
-        "monthSelectionPeriod": "1991–2020",
-        "unit": "%",
-        "credit": "Karger et al. (2021), CHELSA-climatologies v2.1; Brun et al. (2022), CHELSA-BIOCLIM+",
-        "license": "CC0 1.0",
-        "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
-        "source": "https://www.chelsa-climate.org/datasets/chelsa_climatologies",
-        "paper": "https://doi.org/10.5194/essd-14-5573-2022",
-        "rasterTemplate": TEMPLATE,
-        "boundaries": BOUNDARIES,
-        "method": "Monthly values are 1981–2010 mean near-surface relative humidity, in January through December order. Native 30-arcsecond CHELSA modeled land pixels are weighted by their spherical area inside 2017 Census 1:500,000 polygons. Each monthly value requires at least 95% valid mapped area. Seasonal fields select the coldest and hottest months from the county’s 1991–2020 NOAA mean temperatures, when available. Values are percent, rounded to one decimal.",
-        "coverage": {
-            f: sum(c[f] is not None for c in counties.values()) for f in FIELDS
-        },
-        "monthlyCoverage": [
-            sum(c["monthlyHumidity"][i] is not None for c in counties.values())
-            for i in range(12)
-        ],
-        "counties": counties,
-    }
-    output = DATA / "humidity.json"
+        raise ValueError("Review the NOAA seasonal month-selection period")
+    dataset = payload(build(climate["counties"], polygons, annual_files(args.cache)))
+    output = DATA / "absolute-humidity.json"
     temp = output.with_suffix(".tmp")
     temp.write_text(
-        json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+        json.dumps(dataset, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
         + "\n"
     )
     temp.replace(output)
-    print("Monthly coverage:", payload["monthlyCoverage"])
-    print("Seasonal coverage:", payload["coverage"])
+    print("Monthly coverage:", dataset["monthlyCoverage"])
+    print("Seasonal coverage:", dataset["coverage"])
 
 
 if __name__ == "__main__":

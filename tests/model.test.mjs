@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   outcome,
   metricName,
+  monthKeys,
   cutoffFor,
   value,
   layers,
@@ -12,6 +13,7 @@ import {
   defaults,
   color,
   sliderPosition,
+  countyReading,
   residentsPerSquareMile,
 } from "../model.js";
 const f = (key, min, max) => ({ ...freshFilter(key, true), min, max });
@@ -45,7 +47,7 @@ test("density covers every county and retains sparse fractional limits", () => {
     );
   for (const [i, n] of m.sliderStops.entries())
     assert.equal(sliderPosition(m, n), i);
-  assert.equal(sliderPosition(layers.coldHumidity, 47.7), 47.7);
+  assert.equal(sliderPosition(layers.coldAbsoluteHumidity, 4.7), 4.7);
   const bounds = f("populationDensity", 0.03, 0.08);
   const shared = parseView(
     { layer: bounds.key, county: [bounds] },
@@ -316,16 +318,18 @@ test("mapped coverage, heat cutoffs and independent overlap counts match publish
 
 test("calendar climate ranges keep month, units, missing readings, and temperature cutoffs distinct", () => {
   const values = {
-    monthlyHumidity: Array(12).fill(44),
+    monthlyAbsoluteHumidity: Array(12).fill(3.4),
     monthlyColdDays: [],
     monthlyWetDays: Array(12).fill(5.7),
   };
-  values.monthlyHumidity[10] = 40;
+  values.monthlyAbsoluteHumidity[10] = 4;
   values.monthlyColdDays[10] = Array(121).fill(0);
   values.monthlyColdDays[10][70] = 1.7;
   const place = { values };
-  assert.equal(value(place, "novHumidity"), 40);
-  assert.equal(value(place, "decHumidity"), 44);
+  assert.equal(value(place, "novAbsoluteHumidity"), 4);
+  assert.equal(value(place, "decAbsoluteHumidity"), 3.4);
+  assert.equal(countyReading(place, "novAbsoluteHumidity"), "4.0 g/m³");
+  assert.equal(countyReading(place, "decAbsoluteHumidity"), "3.4 g/m³");
   assert.equal(value(place, "janCloudyDays"), null);
   assert.equal(value(place, "janColdDays", 10), null);
   assert.equal(value(place, "novColdDays", 10), 1.7);
@@ -333,7 +337,7 @@ test("calendar climate ranges keep month, units, missing readings, and temperatu
   assert.equal(
     outcome(
       place,
-      [rule, f("novHumidity", 0, 40), f("novWetDays", 5.7, 5.7)],
+      [rule, f("novAbsoluteHumidity", 0, 4), f("novWetDays", 5.7, 5.7)],
       "all",
     ),
     true,
@@ -341,4 +345,29 @@ test("calendar climate ranges keep month, units, missing readings, and temperatu
   assert.equal(outcome(place, [{ ...rule, max: 1.6 }], "all"), false);
   assert.equal(metricName("novColdDays", 10), "November Days Below 10°F");
   assert.equal(layers.febWetDays.domain[1], 29);
+});
+
+test("every published absolute humidity reading fits its filter and map scale", () => {
+  const data = JSON.parse(
+    readFileSync(new URL("../data/absolute-humidity.json", import.meta.url)),
+  );
+  const keys = [
+    ...monthKeys("coldAbsoluteHumidity"),
+    "coldAbsoluteHumidity",
+    "hotAbsoluteHumidity",
+  ];
+  for (const key of keys) assert.equal(layers[key].period, data.period);
+  for (const [id, values] of Object.entries(data.counties)) {
+    const county = { values };
+    for (const key of keys) {
+      const x = value(county, key);
+      if (x === null) continue;
+      const layer = layers[key];
+      assert.ok(
+        x >= layer.domain[0] && x <= layer.domain[1],
+        id + " " + key + " " + x,
+      );
+      assert.ok(color(layer, x));
+    }
+  }
 });
