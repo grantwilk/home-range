@@ -99,11 +99,10 @@ function centered(x, y, r) {
   return { x: x - r, y: y - r, width: 2 * r, height: 2 * r };
 }
 
-// Each screen cell nominates a real visible site. For cities prefer the more
-// populous point, for other directories prefer the point nearer the cell center.
+// Anchor cells to the projection so their centers stay put when panning.
+// Choose the most populous visible city or the facility nearest the cell center.
 function markerCandidates(filter, rows, bounds, scale, size, spacing) {
   const cells = new Map(),
-    cols = Math.ceil(size.width / spacing) + 1,
     xy = xyFor(rows);
   const category = Object.keys(referenceSymbols).indexOf(filter.key);
   const offsetX = ((category % 3) * spacing) / 3,
@@ -121,14 +120,16 @@ function markerCandidates(filter, rows, bounds, scale, size, spacing) {
       y = (xy[2 * i + 1] - bounds.y) * scale;
     if (!(x >= 4 && y >= 4 && x <= size.width - 4 && y <= size.height - 4))
       continue;
-    const cx = Math.floor((x + offsetX) / spacing),
-      cy = Math.floor((y + offsetY) / spacing),
-      id = cy * cols + cx;
+    const gridX = xy[2 * i] * scale + offsetX,
+      gridY = xy[2 * i + 1] * scale + offsetY;
+    const cx = Math.floor(gridX / spacing),
+      cy = Math.floor(gridY / spacing),
+      id = cx + "," + cy;
     const score =
       filter.key === "cities"
         ? -row[3]
-        : (x + offsetX - (cx + 0.5) * spacing) ** 2 +
-          (y + offsetY - (cy + 0.5) * spacing) ** 2;
+        : (gridX - (cx + 0.5) * spacing) ** 2 +
+          (gridY - (cy + 0.5) * spacing) ** 2;
     if (!cells.has(id) || score < cells.get(id).score)
       cells.set(id, { x, y, row, score });
   }
@@ -141,6 +142,7 @@ export class ReferenceMap {
     this.directories = new Map();
     this.errors = new Map();
     this.filters = [];
+    this.moving = false;
     this.markers = [];
     this.canvas = document.createElement("canvas").getContext("2d");
     this.viewport = document.getElementById("viewport");
@@ -229,11 +231,18 @@ export class ReferenceMap {
     }
     this.key.replaceChildren(frag);
   }
+  // The parent SVG transform carries the existing pins, labels and hit targets
+  // throughout navigation. Choose a new layout when the gesture finishes.
+  setMoving(moving) {
+    if (this.moving === moving) return;
+    this.moving = moving;
+    if (!moving) this.redraw();
+  }
   redraw() {
-    if (this.frame || !this.loading) return;
+    if (this.moving || this.frame || !this.loading) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = 0;
-      this.draw();
+      if (!this.moving) this.draw();
     });
   }
   draw() {

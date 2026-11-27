@@ -1447,8 +1447,12 @@ function bind() {
     tx = ty = 0;
     viewTransform();
   };
+  // A wheel zoom can overlap a drag. Resume layout only once both have ended.
+  let wheelTimer;
+  const updateReferenceMotion = () =>
+    referenceMap.setMoving(Boolean(wheelTimer || (drag && ignoreClick)));
   svg.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || !e.isPrimary) return;
     ignoreClick = false;
     const pt = coords(e);
     drag = { id: e.pointerId, x: pt.x, y: pt.y, tx, ty };
@@ -1457,8 +1461,11 @@ function bind() {
     if (drag && e.pointerId === drag.id && zoom > 1) {
       const p = coords(e);
       if (Math.hypot(p.x - drag.x, p.y - drag.y) > 3 || ignoreClick) {
-        if (!ignoreClick) svg.setPointerCapture(e.pointerId);
-        ignoreClick = true;
+        if (!ignoreClick) {
+          svg.setPointerCapture(e.pointerId);
+          ignoreClick = true;
+          updateReferenceMotion();
+        }
         svg.classList.add("dragging");
         tx = drag.tx + p.x - drag.x;
         ty = drag.ty + p.y - drag.y;
@@ -1498,13 +1505,19 @@ function bind() {
     tip.style.top =
       Math.max(4, e.clientY - b.top - tip.offsetHeight - 8) + "px";
   });
-  const release = () => {
-    if (drag && ignoreClick) syncAddress();
+  const release = (e) => {
+    if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
+    if (ignoreClick) syncAddress();
     drag = null;
     svg.classList.remove("dragging");
+    updateReferenceMotion();
   };
   svg.addEventListener("pointerup", release);
   svg.addEventListener("pointercancel", release);
+  svg.addEventListener("lostpointercapture", (e) => {
+    if (e.target === svg && !svg.hasPointerCapture(e.pointerId)) release(e);
+  });
+  window.addEventListener("blur", release);
   svg.addEventListener("pointerleave", () => {
     $("hover").hidden = true;
   });
@@ -1533,6 +1546,12 @@ function bind() {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const p = coords(e);
+      clearTimeout(wheelTimer);
+      wheelTimer = setTimeout(() => {
+        wheelTimer = undefined;
+        updateReferenceMotion();
+      }, 180);
+      updateReferenceMotion();
       changeZoom(Math.exp(-e.deltaY * 0.009), p.x, p.y, true);
     },
     { passive: false },

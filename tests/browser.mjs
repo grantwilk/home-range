@@ -7,6 +7,7 @@ import {
 } from "./catalog-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
+import { checkReferenceMotion } from "./reference-motion-browser.mjs";
 import { checkPdfExport } from "./pdf-browser.mjs";
 import { checkColdDays } from "./cold-days-browser.mjs";
 import { checkNature } from "./nature-browser.mjs";
@@ -1235,6 +1236,7 @@ try {
   await checkColdDays(page, base);
   await checkLocalAccess(page, base);
   await checkNature(page, base);
+  await checkReferenceMotion(page, base);
   await checkPdfExport(page, base, tmp);
   await checkUpperMapInteraction(page, base);
   await checkPlaceSearchAndToolbar(page, base);
