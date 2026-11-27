@@ -25,23 +25,21 @@ export const catalog = [
         id: "temperature",
         name: "Temperature",
         label: "Month",
-        description: "Choose a month and its average daily low or high.",
+        description: "Choose the average high or low for any month.",
         keys: monthlyTemperatureKeys,
       },
       {
         id: "humidity",
         name: "Relative Humidity",
         label: "Month",
-        description:
-          "Average humidity in the county’s coldest or hottest month.",
+        description: "Choose the humidity in the coldest or hottest month.",
         keys: ["coldHumidity", "hotHumidity"],
       },
       {
         id: "temperatureDays",
         name: "Hot & Cold Days",
         label: "Count",
-        description:
-          "Count days per year above or below a temperature threshold.",
+        description: "Choose how many hot or cold days you want each year.",
         searchName: "temperature threshold days",
         keys: ["heatDays", "coldDays"],
         independentRanges: true,
@@ -50,18 +48,18 @@ export const catalog = [
         id: "annualPrecipitation",
         name: "Annual Precipitation",
         label: "Measure",
-        description: "Average inches of rainfall or snowfall per year.",
+        description: "Choose how much rain or snow falls each year.",
         keys: ["rainfall", "snowfall"],
         independentRanges: true,
       },
       single(
         "wetDays",
-        "Days per year with measurable precipitation.",
+        "Choose how many days a year get rain or snow.",
         "precipitation rain rainy dry",
       ),
       single(
         "cloudyDays",
-        "Days per year with at least 80% average countywide cloud cover.",
+        "Choose how many days a year are mostly cloudy.",
         "cloud cover overcast clear sunny cloudy sunshine sky",
       ),
     ],
@@ -71,7 +69,7 @@ export const catalog = [
     entries: [
       single(
         "populationDensity",
-        "Residents per square mile of county land.",
+        "Choose how many people live per square mile.",
         "people populous residents rural urban crowded density",
       ),
       {
@@ -80,7 +78,7 @@ export const catalog = [
         name: "County Crime",
         label: "Measure",
         description:
-          "Reported violent offenses or homicide deaths per 100,000 residents.",
+          "Compare violent crime or homicide rates per 100,000 people.",
         searchTerms: "public safety crime rate",
         keys: ["violentCrimeRate", "homicideRate"],
       },
@@ -90,6 +88,7 @@ export const catalog = [
         label: "Place Type",
         description:
           "Straight-line miles to schools, hospitals, grocery stores, airports, cities, or your own places.",
+        help: "Choose the straight-line distance to the nearest place of this type.",
         searchTerms: "nearby radius proximity within miles",
         keys: [
           "schools",
@@ -110,14 +109,14 @@ export const catalog = [
         name: "Land Cover",
         label: "Cover Type",
         description:
-          "Choose how much of a county is forest, farmland, grassland, or built up.",
+          "Choose how much county land is forest, farmland, or another type.",
         searchTerms: "satellite terrain type land use landscape",
         keys: coverKeys,
         independentRanges: true,
       },
       single(
         "elevation",
-        "Average height above sea level, in feet.",
+        "Choose the county’s average height above sea level.",
         "altitude height",
       ),
       {
@@ -126,6 +125,7 @@ export const catalog = [
         label: "Feature Type",
         description:
           "Straight-line miles to a shoreline, mountain range, park, forest, river, or lake.",
+        help: "Choose the straight-line distance to the nearest natural feature.",
         searchTerms: "nearby radius proximity within miles",
         keys: ["coast", "mountains", "parks", "rivers", "lakes", "freshwater"],
       },
@@ -140,6 +140,7 @@ export const catalog = [
         label: "Hazard Type",
         description:
           "Overall risk or one of 18 hazards, including floods and tornadoes.",
+        help: "Compare each county’s risk from hazards like floods and tornadoes.",
         searchTerms: "FEMA natural disasters",
         keys: Object.keys(layers).filter((key) => layers[key].hazard),
       },
@@ -153,10 +154,10 @@ const byMeasure = new Map(
 );
 // These county-specific seasonal measures can still be displayed from earlier shares.
 const seasonalTemperatures = new Map(
-  ["coldLow", "hotHigh"].map((key) => [
-    key,
-    single(key, layers[key].description),
-  ]),
+  [
+    ["coldLow", "Choose the average low in the coldest month."],
+    ["hotHigh", "Choose the average high in the hottest month."],
+  ].map(([key, description]) => [key, single(key, description)]),
 );
 export const entryFor = (key) =>
   byMeasure.get(key) ?? seasonalTemperatures.get(key);

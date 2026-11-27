@@ -295,13 +295,16 @@ function layerRow(f, index) {
     id = filterId(f),
     viewing = viewedId(state) === id;
   return `<section class="filter-row ${viewing ? "viewing" : ""}" data-key="${key}" data-index="${index}" data-card="${id}" aria-label="${esc(m.name)}">
-    <div class="filter-top"><button class="layer-choice" data-view="${id}" aria-label="View ${esc(m.name)}" title="View ${esc(m.name)}"><span class="tile-icon ${m.icon}">${icon(m.icon, 18)}</span><span class="row-name"><strong>${esc(entry.name)}</strong>${m.facility ? "<small>Straight-line miles</small>" : !entry.label && poles[key] ? `<small>${poles[key].join(" → ")}</small>` : ""}</span></button>
+    <div class="filter-top"><div class="filter-heading">
+      <button class="layer-choice" data-view="${id}" aria-label="View ${esc(m.name)}" title="View ${esc(m.name)}"><span class="tile-icon ${m.icon}">${icon(m.icon, 18)}</span><strong>${esc(entry.name)}</strong></button>
+      <span class="help-anchor"><span class="filter-help" tabindex="0" role="img" aria-label="About ${esc(entry.name)}" aria-describedby="help-${id}"><span aria-hidden="true">?</span></span><span id="help-${id}" class="filter-help-text" role="tooltip" popover="manual">${esc(entry.help ?? entry.description)}</span></span>
+    </div>
     <button class="eye" data-eye="${id}" title="View ${m.name} on Map" aria-label="View ${m.name} on map" aria-pressed="${viewing}">${icon("eye", 18)}</button>
     <button class="switch" type="button" role="switch" data-toggle="${index}" aria-checked="${f.on}" aria-label="Enable ${m.name} filter"><span></span></button>
     <button class="drop-filter" data-drop="${id}" aria-label="Remove ${m.name} filter" title="Remove Filter">${icon("cross", 15)}</button></div>
-    <div class="row-body">${subtypePicker(f, entry)}<p class="row-description">${m.description}</p>
+    <div class="row-body">
+    ${subtypePicker(f, entry)}
     ${rangeEditor(f)}
-    ${notApplicableLayers.has(key) ? '<p class="method-note">A minimum of 0 includes counties FEMA marks “Not applicable.”</p>' : ""}
     ${key === "cities" ? '<h3 class="field-heading">City Population Range</h3>' + rangeEditor(f, true) : ""}
     ${key === "custom" ? `<button class="secondary edit-places" data-custom="true">Edit Places (${f.points.length})</button>` : ""}
     </div>
@@ -334,8 +337,61 @@ function renderControls() {
       .querySelector('[data-view="' + focusKey + '"]')
       ?.focus({ preventScroll: true });
 }
+function bindFilterHelp(list) {
+  const openTip = () => list.querySelector(".filter-help-text:popover-open");
+  const dismiss = () => openTip()?.hidePopover();
+  function show(event) {
+    const marker = event.target.closest(".filter-help");
+    if (!marker) return;
+    const tip = $(marker.getAttribute("aria-describedby"));
+    if (tip.matches(":popover-open")) return;
+    dismiss();
+    tip.showPopover();
+    const rect = marker.getBoundingClientRect();
+    const left = rect.left + (rect.width - tip.offsetWidth) / 2;
+    tip.style.left =
+      Math.max(
+        8,
+        Math.min(
+          left,
+          document.documentElement.clientWidth - tip.offsetWidth - 8,
+        ),
+      ) + "px";
+    tip.style.top =
+      (rect.bottom + tip.offsetHeight <= window.innerHeight - 8
+        ? rect.bottom
+        : rect.top - tip.offsetHeight) + "px";
+  }
+  function leave(event) {
+    const anchor = event.target.closest(".help-anchor");
+    if (!anchor || anchor.contains(event.relatedTarget)) return;
+    if (
+      event.pointerType === "touch" ||
+      (event.type === "pointerout" &&
+        anchor.querySelector(".filter-help:focus-visible"))
+    )
+      return;
+    anchor.querySelector(".filter-help-text:popover-open")?.hidePopover();
+  }
+  list.addEventListener("pointerover", (event) => {
+    if (event.pointerType !== "touch") show(event);
+  });
+  list.addEventListener("pointerout", leave);
+  list.addEventListener("focusin", show);
+  list.addEventListener("focusout", leave);
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".help-anchor")) dismiss();
+    else if (event.pointerType === "touch") show(event);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") dismiss();
+  });
+  list.addEventListener("scroll", dismiss);
+  window.addEventListener("resize", dismiss);
+}
 function bindFilters() {
   const list = $("filters");
+  bindFilterHelp(list);
   list.addEventListener("click", (event) => {
     const btn = event.target.closest("button");
     if (!btn) return;

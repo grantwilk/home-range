@@ -1228,6 +1228,44 @@ try {
   await page.locator("#share").click();
   assert.equal(await page.locator("#copy-link").inputValue(), page.url());
   await page.locator("#close").click();
+  await page.goto(
+    base + "?janLow=-20..40&julHigh=60..90&paused=janLow&layer=julHigh",
+  );
+  const about = row("janLow").getByRole("img", {
+    name: "About Temperature",
+  });
+  const hint = row("janLow").locator(".filter-help-text");
+  const otherHint = row("julHigh").locator(".filter-help-text");
+  assert.equal(await hint.isVisible(), false);
+  const cardHeight = await row("janLow").evaluate((el) => el.offsetHeight);
+  await about.hover();
+  assert.ok(await hint.isVisible());
+  assert.equal(await otherHint.isVisible(), false);
+  assert.equal(await hint.textContent(), await otherHint.textContent());
+  assert.equal(
+    await row("janLow").locator(".switch").getAttribute("aria-checked"),
+    "false",
+  );
+  assert.equal(
+    await row("julHigh").locator("[data-eye]").getAttribute("aria-pressed"),
+    "true",
+  );
+  assert.equal(
+    await row("janLow").evaluate((el) => el.offsetHeight),
+    cardHeight,
+  );
+  await hint.hover();
+  assert.ok(await hint.isVisible());
+  await page.locator("#filters-title").hover();
+  assert.equal(await hint.isVisible(), false);
+  await about.focus();
+  assert.ok(await hint.isVisible());
+  await about.press("Escape");
+  assert.equal(await hint.isVisible(), false);
+  await about.tap();
+  assert.ok(await hint.isVisible());
+  await page.locator("#filters-title").tap();
+  assert.equal(await hint.isVisible(), false);
   await checkCatalogLayout(page, base);
   await checkHazards(page, base);
   await checkLandscape(page, base);
