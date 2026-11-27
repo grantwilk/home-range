@@ -71,12 +71,18 @@ export async function checkLocalAccess(page, base) {
     await page.locator("#add-filter").click();
     await pickMeasure(page, "distance", key);
   };
-  const readPoint = async (coordinate) => {
+  const readPoint = async (coordinate, key) => {
     await page.locator("#search").click();
     await page.locator("#query").fill(coordinate);
     await page.locator("#query").press("Enter");
     await page.locator(".local-reading").first().waitFor();
-    const text = await page.locator("#local-measures").innerText();
+    const matches = page.locator("#county-matches");
+    const row = matches.locator(`[data-filter-id="${key}"]`);
+    const text = key
+      ? (await row.locator(".match-reading").innerText()) +
+        " · " +
+        (await row.locator(".match-status").innerText())
+      : await matches.innerText();
     await page.locator("#close").click();
     return text;
   };
@@ -161,8 +167,11 @@ export async function checkLocalAccess(page, base) {
     { timeout: 15000 },
   );
   const chicago = await readPoint("41.837045, -87.684939");
-  assert.match(chicago, /Nearest location · Chicago, IL/);
-  assert.match(chicago, /0 mi · Match/);
+  assert.match(chicago, /Chicago, IL/);
+  assert.match(
+    await readPoint("41.837045, -87.684939", "cities"),
+    /0 mi · Match/,
+  );
   await page.locator("[data-drop=cities]").click();
   await add("custom");
   await page.route("https://photon.komoot.io/**", (r) => r.abort());
@@ -177,8 +186,8 @@ export async function checkLocalAccess(page, base) {
   }
   await page.locator("#save-places").click();
   await ready();
-  assert.match(await readPoint("43.0731, -89.4012"), /0 mi · Match/);
-  assert.match(await readPoint("42.99, -89.7"), /mi · Outside/);
+  assert.match(await readPoint("43.0731, -89.4012", "custom"), /0 mi · Match/);
+  assert.match(await readPoint("42.99, -89.7", "custom"), /mi · Outside/);
   const low = page.locator("[data-key=janLow] .num[data-bound=min]");
   await low.fill("50");
   await low.press("Tab");
@@ -274,14 +283,30 @@ export async function checkLocalAccess(page, base) {
   await ready();
   assert.ok(sameColor(await pixel(-89.7, 42.99), outside));
 
-  const pin = await screenPoint(-89.4012, 43.0731);
-  await page.mouse.click(pin.x, pin.y);
-  await page.locator(".local-reading").first().waitFor();
-  assert.match(
-    await page.locator("#local-measures").innerText(),
-    /0 mi · Match/,
-  );
-  await page.locator("#close").click();
+  // A matching pin and an excluded spot in the same county open the same
+  // profile, with the distance calculated at the actual inspected location.
+  for (const [lon, lat, verdict, distance] of [
+    [-89.4012, 43.0731, "Match", /^0 mi$/],
+    [-89.7, 42.99, "Outside", /mi$/],
+  ]) {
+    const point = await screenPoint(lon, lat);
+    await page.mouse.click(point.x, point.y);
+    const profile = page.locator("#county-profile");
+    const reading = profile.locator('.local-reading[data-filter-id="custom"]');
+    await reading.waitFor();
+    assert.equal(
+      await page.locator("#dialog-title").innerText(),
+      "Dane County",
+    );
+    assert.match(await reading.locator(".match-reading").innerText(), distance);
+    assert.equal(await reading.locator(".match-status").innerText(), verdict);
+    assert.equal(await profile.locator("details[data-group]").count(), 4);
+    assert.equal(
+      await profile.getByRole("button", { name: "County Profile" }).count(),
+      0,
+    );
+    await page.locator("#close").click();
+  }
   while (
     await page
       .locator("#viewport")
@@ -320,8 +345,8 @@ export async function checkLocalAccess(page, base) {
   await minMiles.fill("0");
   await minMiles.press("Enter");
   await ready();
-  assert.match(await readPoint("43.0731, -89.4012"), /0 mi · Match/);
-  const approaching = await readPoint("43.08, -89.50");
+  assert.match(await readPoint("43.0731, -89.4012", "custom"), /0 mi · Match/);
+  const approaching = await readPoint("43.08, -89.50", "custom");
   const miles = Number(approaching.match(/([\d.]+) mi/)?.[1]);
   assert.ok(miles > 4 && miles < 6, approaching);
   await page.locator("[data-eye=janLow]").click();

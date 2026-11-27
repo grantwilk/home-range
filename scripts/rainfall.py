@@ -193,7 +193,7 @@ def liquid_month(total, snow, year, month):
 
 def climate_grid(cache):
     # All dates are required in each grid cell. Ordinary summation propagates missing inputs.
-    total = np.zeros((721, 1440))
+    total = np.zeros((12, 721, 1440))
     for year in YEARS:
         with (
             Dataset(source_file(cache, year, "TP")) as tp,
@@ -202,7 +202,7 @@ def climate_grid(cache):
             validate(tp, year, "TP")
             validate(sf, year, "SF")
             for i in range(12):
-                total += liquid_month(tp["TP"][i], sf["SF"][i], year, i + 1)
+                total[i] += liquid_month(tp["TP"][i], sf["SF"][i], year, i + 1)
     return total / (len(YEARS) * METRES_PER_INCH)
 
 
@@ -235,16 +235,22 @@ def build(cache):
     ncar.mkdir(exist_ok=True)
     counties = county_boundaries(cache)
     half = RESOLUTION / 2
-    raster = NumPyRasterSource(
-        longitude_wrap(climate_grid(ncar)),
-        -180 - half,
-        -90 - half,
-        180 + half,
-        90 + half,
-        nodata=np.nan,
-        srs_wkt=CRS.from_epsg(4326).to_wkt(),
-    )
-    values = county_inches(raster, counties)
+    monthly = climate_grid(ncar)
+
+    def extract(grid):
+        raster = NumPyRasterSource(
+            longitude_wrap(grid),
+            -180 - half,
+            -90 - half,
+            180 + half,
+            90 + half,
+            nodata=np.nan,
+            srs_wkt=CRS.from_epsg(4326).to_wkt(),
+        )
+        return county_inches(raster, counties)
+
+    values = extract(monthly.sum(axis=0))
+    by_month = [extract(grid) for grid in monthly]
     if set(values) != set(counties.GEOID):
         raise ValueError("Rainfall county IDs do not match the 2017 Census geography")
     payload = {
@@ -266,10 +272,11 @@ def build(cache):
             "of zero are set to zero for differences attributable to source precision. Larger negative "
             "residuals and missing inputs invalidate that cell's normal. Native 0.25° cells are weighted "
             "by their spherical area inside shoreline-clipped 2017 Census polygons. Each county requires "
-            "95% coverage by cells with all 360 months. County means are rounded to one decimal inch."
+            "95% coverage by cells with complete records for the period selected (30 calendar months or all 360 months). County means are rounded to one decimal inch."
         ),
         "coverage": sum(v is not None for v in values.values()),
         "counties": values,
+        "monthlyCounties": {fips: [m[fips] for m in by_month] for fips in values},
     }
     temp = OUTPUT.with_suffix(".tmp")
     temp.write_text(

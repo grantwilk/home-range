@@ -78,6 +78,28 @@ class HumidityTests(unittest.TestCase):
             for fips, v in values:
                 self.assertIn(fips, climate)
                 self.assertTrue(0 <= v <= 100)
+        monthly_coverage = [0] * 12
+        for fips, row in humidity["counties"].items():
+            monthly = row["monthlyHumidity"]
+            self.assertEqual(len(monthly), 12)
+            for month, reading in enumerate(monthly):
+                if reading is not None:
+                    self.assertTrue(0 <= reading <= 100)
+                    monthly_coverage[month] += 1
+            for season, month_field in (
+                ("coldHumidity", "coldMonth"),
+                ("hotHumidity", "hotMonth"),
+            ):
+                month = climate.get(fips, {}).get(month_field)
+                self.assertEqual(row[season], monthly[month - 1] if month else None)
+        self.assertEqual(monthly_coverage, humidity["monthlyCoverage"])
+        self.assertTrue(all(count > 3000 for count in monthly_coverage))
+        # Independent cell-by-cell polygon intersections on all 12 source rasters
+        # in the District of Columbia, weighted by each cell's spherical area.
+        self.assertEqual(
+            humidity["counties"]["11001"]["monthlyHumidity"],
+            [55.8, 54.9, 54.3, 54.5, 56.3, 56.8, 56.9, 58.1, 57.8, 56.9, 56.5, 56.4],
+        )
         # Separately computed from native CHELSA cells intersecting these
         # counties. The five checks include Jan/Jul, Feb/Aug, Jan/Sep and Dec/Jul.
         for fips, (cold, hot) in {
@@ -87,13 +109,14 @@ class HumidityTests(unittest.TestCase):
             "06075": (63.0, 66.5),
             "04013": (47.7, 41.0),
         }.items():
-            self.assertEqual(
-                humidity["counties"][fips], {"coldHumidity": cold, "hotHumidity": hot}
-            )
+            self.assertEqual(humidity["counties"][fips]["coldHumidity"], cold)
+            self.assertEqual(humidity["counties"][fips]["hotHumidity"], hot)
         for county in ("51678", "02261"):
-            self.assertEqual(
-                humidity["counties"][county],
-                {"coldHumidity": None, "hotHumidity": None},
+            row = humidity["counties"][county]
+            self.assertIsNone(row["coldHumidity"])
+            self.assertIsNone(row["hotHumidity"])
+            self.assertTrue(
+                all(reading is not None for reading in row["monthlyHumidity"])
             )
 
 

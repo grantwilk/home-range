@@ -134,6 +134,7 @@ const monthlyTemperatures = Object.fromEntries(
         ),
         month,
         temperatureStat: stat,
+        monthlySeries: "monthly" + stat,
       },
     ]),
   ),
@@ -289,13 +290,79 @@ export const layers = {
   ...hazardLayers,
   ...facilityLayers,
 };
+// Each key identifies one source series and calendar month, including in share URLs.
+const calendarClimate = {
+  coldHumidity: {
+    suffix: "Humidity",
+    label: "Relative Humidity",
+    bins: [40, 50, 60, 65, 70, 75],
+  },
+  rainfall: {
+    suffix: "Rainfall",
+    label: "Rainfall",
+    bins: [0.5, 1, 2, 3, 5, 8],
+  },
+  cloudyDays: {
+    suffix: "CloudyDays",
+    label: "Cloudy Days",
+    bins: [1, 3, 5, 8, 12, 18],
+  },
+  wetDays: { suffix: "WetDays", label: "Wet Days", bins: [2, 4, 6, 8, 12, 18] },
+  heatDays: {
+    suffix: "HeatDays",
+    label: "Hot Days",
+    bins: [1, 3, 7, 12, 18, 24],
+  },
+  coldDays: {
+    suffix: "ColdDays",
+    label: "Cold Days",
+    bins: [0.1, 1, 3, 7, 14, 21],
+  },
+};
+export const monthKeys = (baseKey) =>
+  months.map(
+    (month) =>
+      month.slice(0, 3).toLowerCase() + calendarClimate[baseKey].suffix,
+  );
+const monthLimits = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+for (const [baseKey, { suffix, label, bins }] of Object.entries(
+  calendarClimate,
+)) {
+  monthKeys(baseKey).forEach((key, month) => {
+    const name = months[month];
+    const days = suffix.endsWith("Days");
+    layers[key] = {
+      ...layers[baseKey],
+      name: `Average ${name} ${label}`,
+      unit: days ? "days/mo" : baseKey === "rainfall" ? "in/mo" : "%",
+      domain: days
+        ? [0, monthLimits[month]]
+        : baseKey === "rainfall"
+          ? [0, 35]
+          : [0, 100],
+      bins,
+      baseKey,
+      month,
+      monthlySeries: "monthly" + suffix,
+      description: `Average ${label.toLowerCase()} in ${name} across the county.`,
+    };
+  });
+}
 export const poles = {
   coldHumidity: ["Less humid", "More humid"],
   hotHumidity: ["Less humid", "More humid"],
   wetDays: ["Drier", "Wetter"],
+  ...Object.fromEntries(
+    monthKeys("wetDays").map((key) => [key, ["Drier", "Wetter"]]),
+  ),
+  ...Object.fromEntries(
+    monthKeys("coldHumidity").map((key) => [key, ["Less humid", "More humid"]]),
+  ),
 };
 // These measures take a second input that changes what is being measured.
 export const repeatableMeasures = new Set([
+  ...monthKeys("heatDays"),
+  ...monthKeys("coldDays"),
   "heatDays",
   "coldDays",
   "cities",
@@ -337,10 +404,11 @@ export function value(place, key, cutoff = layers[key]?.threshold?.initial) {
   const readings = place.values;
   const metric = layers[key];
   let x = readings?.[key];
-  if (metric?.temperatureStat) {
-    const series = readings?.["monthly" + metric.temperatureStat];
+  if (metric?.monthlySeries) {
+    const series = readings?.[metric.monthlySeries];
     if (series) x = series[metric.month];
-  } else if (metric?.threshold) {
+  }
+  if (metric?.threshold) {
     x = validCutoff(cutoff, metric.threshold)
       ? x?.[cutoff - metric.threshold.min]
       : null;
@@ -607,8 +675,13 @@ export const fmt = (v, unit) =>
           unit === "/ 100" || unit === "people/mi²" ? 2 : 1,
       }) + (unit === "°F" ? "°F" : unit === "%" ? "%" : " " + unit);
 export function metricName(key, cutoff = layers[key]?.threshold?.initial) {
-  if (key === "heatDays") return `Days at or Above ${cutoff}°F`;
-  if (key === "coldDays") return `Days Below ${cutoff}°F`;
+  const metric = layers[key];
+  if (metric?.threshold) {
+    const prefix = metric.month === undefined ? "" : months[metric.month] + " ";
+    const direction =
+      (metric.baseKey ?? key) === "coldDays" ? "Below" : "at or Above";
+    return `${prefix}Days ${direction} ${cutoff}°F`;
+  }
   return layers[key].name;
 }
 

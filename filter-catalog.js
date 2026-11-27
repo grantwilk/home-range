@@ -5,6 +5,8 @@ import {
   layers,
   freshFilter,
   monthlyTemperatureKeys,
+  monthKeys,
+  months,
   filterId,
   repeatableMeasures,
   maxFilters,
@@ -32,36 +34,53 @@ export const catalog = [
         id: "humidity",
         name: "Relative Humidity",
         label: "Month",
-        description: "Choose the humidity in the coldest or hottest month.",
-        keys: ["coldHumidity", "hotHumidity"],
+        description: "Choose how humid a county is in a given month.",
+        keys: [...monthKeys("coldHumidity"), "coldHumidity", "hotHumidity"],
       },
       {
         id: "temperatureDays",
         name: "Hot & Cold Days",
         label: "Count",
-        description: "Choose how many hot or cold days you want each year.",
+        description:
+          "Choose how many hot or cold days you want in a month or year.",
         searchName: "temperature threshold days",
-        keys: ["heatDays", "coldDays"],
+        keys: [
+          "heatDays",
+          "coldDays",
+          ...monthKeys("heatDays"),
+          ...monthKeys("coldDays"),
+        ],
+        periodMeasures: ["heatDays", "coldDays"],
         independentRanges: true,
       },
       {
         id: "annualPrecipitation",
-        name: "Annual Precipitation",
+        name: "Precipitation",
         label: "Measure",
-        description: "Choose how much rain or snow falls each year.",
-        keys: ["rainfall", "snowfall"],
+        description: "Choose how much rain or snow falls.",
+        keys: ["rainfall", "snowfall", ...monthKeys("rainfall")],
+        periodMeasures: ["rainfall", "snowfall"],
         independentRanges: true,
       },
-      single(
-        "wetDays",
-        "Choose how many days a year get rain or snow.",
-        "precipitation rain rainy dry",
-      ),
-      single(
-        "cloudyDays",
-        "Choose how many days a year are mostly cloudy.",
-        "cloud cover overcast clear sunny cloudy sunshine sky",
-      ),
+      {
+        ...single(
+          "wetDays",
+          "Choose how many days get measurable rain or snow.",
+          "precipitation rain rainy dry",
+        ),
+        label: "Period",
+        keys: ["wetDays", ...monthKeys("wetDays")],
+      },
+      {
+        ...single(
+          "cloudyDays",
+          "Choose how many days are mostly cloudy.",
+          "cloud cover overcast clear sunny cloudy sunshine",
+        ),
+        name: "Cloudy Days",
+        label: "Period",
+        keys: ["cloudyDays", ...monthKeys("cloudyDays")],
+      },
     ],
   },
   {
@@ -166,6 +185,8 @@ export const canAddKey = (key, used) =>
   !used.has(key) || repeatableMeasures.has(key);
 
 export function optionName(key) {
+  if (layers[key].baseKey) return months[layers[key].month];
+  if (key === "wetDays" || key === "cloudyDays") return "Full Year";
   if (key === "coast") return "Coast & Great Lakes";
   if (key === "freshwater") return "Larger Rivers or Lakes";
   if (key === "RISK_SCORE") return "All Hazards Combined";
@@ -216,7 +237,7 @@ export function catalogMatches(used, query = "") {
             common,
             m.name,
             optionName(key),
-            aliases[key],
+            aliases[m.baseKey ?? key],
             m.searchTerms,
             m.description,
           ]
@@ -224,11 +245,18 @@ export function catalogMatches(used, query = "") {
             .toLowerCase();
           return words.every((word) => terms.includes(word));
         });
+        // A search for hot or cold days defaults to the annual cutoff even
+        // when the user already has a rule for a different temperature.
+        const annual =
+          entry.id === "temperatureDays"
+            ? matches.filter((key) => layers[key].month === undefined)
+            : [];
+        const candidates = annual.length ? annual : matches;
         return matches.length
           ? [
               {
                 entry,
-                key: matches.find((key) => !used.has(key)) ?? matches[0],
+                key: candidates.find((key) => !used.has(key)) ?? candidates[0],
                 detail:
                   words.length && matches.length === 1 && entry.label
                     ? layers[matches[0]].name
@@ -271,8 +299,14 @@ export function changeSubtype(current, key, existing = []) {
   const next = saved.get(key) ?? newCard(key);
   if (!saved.has(key)) {
     const initial = newCard(current.key);
+    const previous = layers[current.key];
+    const metric = layers[key];
+    const sameMeasure =
+      (previous.baseKey ?? current.key) === (metric.baseKey ?? key);
+    if (sameMeasure && metric.threshold) next.cutoff = current.cutoff;
     if (
-      !entryFor(key).independentRanges &&
+      (!entryFor(key).independentRanges || sameMeasure) &&
+      previous.unit === metric.unit &&
       (current.min !== initial.min || current.max !== initial.max)
     ) {
       const [lo, hi] = layers[key].domain;

@@ -46,7 +46,7 @@ export async function checkHazards(page, base) {
     await page.locator("#query").press("Enter");
     const value = await page.locator(".detailval").innerText();
     const verdicts = await page
-      .locator("#dialog-body .minirow")
+      .locator("#county-matches .match-status")
       .allInnerTexts();
     await page.locator("#close").click();
     return { value, verdicts: verdicts.join("\n") };

@@ -27,10 +27,10 @@ export async function checkNature(page, base) {
   await page.locator("#query").fill("42.54637, -88.2981");
   await page.locator("#query").press("Enter");
   await page.locator(".local-reading").first().waitFor();
-  assert.match(
-    await page.locator(".local-reading").last().innerText(),
-    /0 mi · Match[\s\S]*Powers Lake/,
-  );
+  const lake = page.locator('#county-matches [data-filter-id="lakes"]');
+  assert.match(await lake.innerText(), /Powers Lake/);
+  assert.equal(await lake.locator(".match-status").innerText(), "Match");
+  assert.equal(await lake.locator(".match-reading").innerText(), "0 mi");
   await page.locator("#close").click();
   await page.goto(
     base + "?freshwater=0..1&parks=0..20&layer=freshwater&match=all",

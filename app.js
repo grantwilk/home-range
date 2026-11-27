@@ -1,4 +1,7 @@
-import { combine, projection } from "./spatial.js";
+import { esc } from "./html.js";
+import { loadDayMonth } from "./monthly-day-counts.js";
+import { openCountyProfile } from "./county-profile.js";
+import { projection } from "./spatial.js";
 import { FacilityMap } from "./facility-map.js";
 import { ReferenceMap, loadCityPoints } from "./map-reference.js";
 import { findPlaces, townDescription } from "./place-search.js";
@@ -16,8 +19,8 @@ import { mapBounds } from "./export-map-svg.js";
 import { downloadPdfFrame } from "./pdf-render-frame.js";
 import { openExportOptions } from "./export-options.js";
 import { editPlaces } from "./custom-places.js";
-import { coverKeys, landscapeValues, landShareLabel } from "./landscape.js";
-import { countyHazards, hazardLayers } from "./hazards.js";
+import { landscapeValues } from "./landscape.js";
+import { countyHazards } from "./hazards.js";
 import { icon } from "./icons.js";
 import {
   layers,
@@ -32,7 +35,6 @@ import {
   viewedId,
   filterId,
   setViewedFilter,
-  matchRange,
   color,
   defaults,
   parseView,
@@ -43,19 +45,8 @@ import {
   sliderPosition,
   metricName,
 } from "./model.js";
-const $ = (id) => document.getElementById(id),
-  esc = (x) =>
-    String(x).replace(
-      /[&<>"']/g,
-      (c) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        })[c],
-    );
+const $ = (id) => document.getElementById(id);
+
 document
   .querySelectorAll("[data-icon]")
   .forEach((el) => (el.innerHTML = icon(el.dataset.icon)));
@@ -214,7 +205,7 @@ function rangeEditor(filter, city = false) {
       "</div>"
     : `<div class="endpoints"><span>${[poles[f.key]?.[0], fmt(min, m.unit)].filter(Boolean).join(" · ")}</span><span>${[poles[f.key]?.[1], fmt(max, m.unit)].filter(Boolean).join(" · ")}</span></div>`;
   return `<div class="editor" data-setting="${city ? "citySize" : "range"}" role="group" aria-label="${m.name} range">
-    ${m.threshold ? `<label class="cutoff-label">${f.key === "coldDays" ? "Daily low below" : "Daily high at or above"} <input class="cutoff" type="number" min="${m.threshold.min}" max="${m.threshold.max}" step="1" value="${f.cutoff}"> °F</label>` : ""}
+    ${m.threshold ? `<label class="cutoff-label">${(m.baseKey ?? f.key) === "coldDays" ? "Daily low below" : "Daily high at or above"} <input class="cutoff" type="number" min="${m.threshold.min}" max="${m.threshold.max}" step="1" value="${f.cutoff}"> °F</label>` : ""}
     <div class="bound-fields">${inputs}</div>
     <div class="range-track"><div class="range-line">${handles}</div></div>
     ${endpoints}</div>`;
@@ -277,6 +268,34 @@ function subtypePicker(f, entry) {
     return `<div class="temperature-fields">
       <label class="subtype-field"><span>Month</span><select data-temperature-month data-picker="month" aria-label="Month for ${metric.name}">${monthOptions}</select></label>
       <label class="subtype-field"><span>Measure</span><select data-temperature-stat data-picker="stat" aria-label="Temperature statistic for ${metric.name}">${statOptions}</select></label>
+      </div>`;
+  }
+  if (entry.periodMeasures) {
+    const base = metric.baseKey ?? f.key;
+    const available = (key) => key === f.key || canAddKey(key, used);
+    const periods = (measure) =>
+      entry.keys.filter((key) => (layers[key].baseKey ?? key) === measure);
+    const measures = entry.periodMeasures
+      .map((measure) => {
+        const choices = periods(measure).filter(available);
+        const key =
+          choices.find((key) => layers[key].month === metric.month) ??
+          choices[0];
+        const label = layers[measure].name.replace(/^Annual /, "");
+        return `<option value="${measure}" data-measure="${key ?? ""}" ${measure === base ? "selected" : !key ? "disabled" : ""}>${esc(label)}${key ? "" : " (already added)"}</option>`;
+      })
+      .join("");
+    const choices = periods(base);
+    const periodOptions = choices
+      .map((key) => {
+        const m = layers[key];
+        const label = m.month === undefined ? "Full Year" : months[m.month];
+        return `<option value="${key}" ${key === f.key ? "selected" : !available(key) ? "disabled" : ""}>${label}${available(key) ? "" : " (already added)"}</option>`;
+      })
+      .join("");
+    return `<div class="temperature-fields">
+      <label class="subtype-field"><span>${entry.label}</span><select data-subtype data-picker="subtype" aria-label="${entry.label} for ${esc(metric.name)}">${measures}</select></label>
+      <label class="subtype-field"><span>Period</span><select data-period data-picker="period" aria-label="Period for ${esc(metric.name)}" ${choices.length === 1 ? "disabled" : ""}>${periodOptions}</select></label>
       </div>`;
   }
   const options = entry.keys
@@ -636,7 +655,7 @@ function registerCountySource(key, source) {
   };
 }
 function periodFor(key, county) {
-  const source = countySources[key];
+  const source = countySources[key] ?? countySources[layers[key]?.baseKey];
   if (!source) return layers[key].period;
   return county
     ? (source.periodByState?.[county.id.slice(0, 2)] ??
@@ -650,13 +669,10 @@ const crimeCredits = {
   homicideRate:
     '<a href="https://www.countyhealthrankings.org/health-data/community-conditions/social-and-economic-factors/safety-and-social-support/homicides">County Health Rankings · NCHS (2017–2023)</a>',
 };
-const seasonalMonths = {
-  coldLow: "coldMonth",
-  coldHumidity: "coldMonth",
-  hotHigh: "hotMonth",
-  hotHumidity: "hotMonth",
-};
-const isHumidity = (key) => key === "coldHumidity" || key === "hotHumidity";
+const isHumidity = (key) =>
+  key === "coldHumidity" ||
+  key === "hotHumidity" ||
+  layers[key]?.monthlySeries === "monthlyHumidity";
 // Keep groups intact and preserve their reading order across layout changes.
 function catalogColumns(groups) {
   if (groups.length < 2) return [groups];
@@ -753,7 +769,12 @@ function paintCredits() {
   for (const key of keys) {
     if (layers[key].facility) continue;
     if (layers[key].hazard) credits.add(hazardCredit);
-    else if (key === "cloudyDays") credits.add(cloudyDaysCredit);
+    else if (key === "cloudyDays" || layers[key].baseKey === "cloudyDays")
+      credits.add(cloudyDaysCredit);
+    else if (layers[key].baseKey === "rainfall")
+      credits.add(countySources.rainfall.credit);
+    else if (layers[key].monthlySeries === "monthlyHumidity")
+      credits.add(humidityCredit);
     else if (countySources[key]) credits.add(countySources[key].credit);
     else if (key === "populationDensity") credits.add(populationCredit);
     else if (key === "elevation") credits.add(elevationCredit);
@@ -806,6 +827,7 @@ function paintLegend() {
       rainfall: "Mean annual rainfall",
       snowfall: "Mean seasonal snowfall",
     }[state.layer] ??
+    (m.baseKey ? "Calendar-month average" : null) ??
     (m.landCover ? "Share of county land" : poles[state.layer]?.join(" → "));
   $("legend-sub").textContent =
     (m.hazard
@@ -864,7 +886,56 @@ function paintLegend() {
       ? '<span><b class="swatch uncertain"></b>Uncertain match</span>'
       : "");
 }
+const loadedDayMonths = new Set();
+let dayLoad;
+function syncDayMonths() {
+  const needed = [
+    ...new Set(
+      filters()
+        .filter((f) => f.on || filterId(f) === viewedId(state))
+        .map((f) => layers[f.key])
+        .filter((m) => m.threshold && Number.isInteger(m.month))
+        .map((m) => m.month),
+    ),
+  ].sort((a, b) => a - b);
+  const key = needed.join(",");
+  if (dayLoad?.key === key) return;
+  const missing = needed.filter((m) => !loadedDayMonths.has(m));
+  const job = {
+    key,
+    missing: new Set(missing),
+    status: missing.length ? "loading" : "ready",
+  };
+  dayLoad = job;
+  const notice = $("day-status");
+  notice.hidden = !missing.length;
+  if (!missing.length) return;
+  notice.textContent = "Loading monthly day counts…";
+  job.done = Promise.allSettled(
+    missing.map(async (month) => {
+      await loadDayMonth(month, places);
+      loadedDayMonths.add(month);
+      job.missing.delete(month);
+    }),
+  ).then(() => {
+    job.status = job.missing.size ? "error" : "ready";
+    if (dayLoad !== job) return;
+    if (job.status === "ready") notice.hidden = true;
+    else {
+      const retry = document.createElement("button");
+      retry.className = "quiet";
+      retry.textContent = "Retry";
+      retry.onclick = () => {
+        dayLoad = null;
+        refresh();
+      };
+      notice.replaceChildren("Monthly day counts could not load. ", retry);
+    }
+    refresh();
+  });
+}
 function refresh(continuous = false) {
+  syncDayMonths();
   if (continuous) scheduleAddress();
   else syncAddress();
   const m = metric(),
@@ -975,7 +1046,7 @@ function search() {
         "</button>";
       $("inspect-coordinate").onclick = () =>
         access?.active
-          ? pointDetails(null, { lat, lon })
+          ? inspectPlace(null, { lat, lon })
           : goTo(lon, lat, lat + ", " + lon);
       return;
     }
@@ -1073,265 +1144,31 @@ function search() {
   };
   input.focus();
 }
-function monthlyChart(values) {
-  if (!Array.isArray(values.monthlyLow) || !Array.isArray(values.monthlyHigh))
-    return "";
-  const low = values.monthlyLow,
-    high = values.monthlyHigh;
-  const left = 34,
-    dx = 30,
-    y = (t) => 104 - (t + 25) * 0.68;
-  const x = (i) => left + i * dx;
-  const line = (series) => series.map((v, i) => x(i) + "," + y(v)).join(" ");
-  const ribbon =
-    line(high) +
-    " " +
-    low
-      .map((_, i) => {
-        const j = 11 - i;
-        return x(j) + "," + y(low[j]);
-      })
-      .join(" ");
-  const abbreviated = months.map((name) => name.slice(0, 3));
-  return (
-    '<h3>Monthly Temperatures</h3><p class="micro">Average daily high and low · °F · 1991–2020</p><svg class="monthly" role="img" aria-label="Monthly average high and low temperatures. Exact values follow." viewBox="0 0 380 130">' +
-    [0, 32, 65, 100]
-      .map(
-        (t) =>
-          '<path d="M29 ' +
-          y(t) +
-          'H371" stroke="#d7dfd4"/><text x="22" y="' +
-          (y(t) + 3) +
-          '" text-anchor="end">' +
-          t +
-          "°</text>",
-      )
-      .join("") +
-    '<polygon points="' +
-    ribbon +
-    '" fill="#d4ddbe" opacity=".7"/><polyline fill="none" stroke="#b06e3e" stroke-width="2.6" points="' +
-    line(high) +
-    '"/><polyline fill="none" stroke="#477c87" stroke-width="2.6" points="' +
-    line(low) +
-    '"/>' +
-    abbreviated
-      .map(
-        (m, i) =>
-          '<text x="' +
-          x(i) +
-          '" y="121" text-anchor="middle">' +
-          m +
-          "</text>",
-      )
-      .join("") +
-    '</svg><details class="month-table"><summary>Monthly Values</summary><table><thead><tr><th>Month</th><th>Low</th><th>High</th></tr></thead><tbody>' +
-    abbreviated
-      .map(
-        (m, i) =>
-          "<tr><td>" +
-          m +
-          "</td><td>" +
-          fmt(low[i], "°F") +
-          "</td><td>" +
-          fmt(high[i], "°F") +
-          "</td></tr>",
-      )
-      .join("") +
-    "</tbody></table></details>"
-  );
-}
-function landscapeDetails(county, viewing) {
-  const cover = coverKeys
-    .filter((key) => Number.isFinite(county.values[key]))
-    .sort((a, b) => county.values[b] - county.values[a]);
-  const leading = cover
-    .filter((key) => county.values[key] > 0)
-    .slice(0, 2)
-    .map((key) => layers[key].name + " " + landShareLabel(county.values[key]))
-    .join(" · ");
-  const shareRow = (key) => {
-    const percent = county.values[key];
-    return `<li><span>${esc(layers[key].name)}</span><span class="land-track" aria-hidden="true"><i style="width:${percent}%;background:${layers[key].swatch}"></i></span><b>${esc(landShareLabel(percent))}</b></li>`;
+function inspectPlace(county, point) {
+  const select = (county) => {
+    selected = county?.uid ?? null;
+    highlight();
   };
-  return `<details class="month-table landscape-detail" ${viewing ? "open" : ""}>
-    <summary>County Landscape${leading ? `<small>${esc(leading)}</small>` : ""}</summary>
-    <h3>Land Cover</h3>${
-      cover.length
-        ? `<p class="micro">${esc(periodFor(cover[0], county))} · Share of classified land, excluding open water. A particular address can have a different mix.</p>
-    <ul class="land-shares">${cover.map(shareRow).join("")}</ul>`
-        : "<p>No land cover data for this county.</p>"
-    }
-    </details>`;
-}
-function placeDetails(uid) {
-  const p = byID.get(uid);
-  if (!p) return;
-  selected = uid;
-  highlight();
-  const m = metric(),
-    v = p.values;
-  const monthName = (key) => months[v[seasonalMonths[key]] - 1] ?? "";
-  const fields = Object.keys(layers).filter(
-    (k) =>
-      !layers[k].temperatureStat &&
-      !layers[k].facility &&
-      !layers[k].hazard &&
-      !layers[k].landCover,
-  );
-  const active = filters().filter((f) => f.on && !layers[f.key].facility);
-  showDialog(
-    p.name,
-    "<p>" +
-      esc(p.stateName) +
-      " · " +
-      "FIPS " +
-      p.id +
-      "</p>" +
-      (m && !m.facility
-        ? `<div class="detailval${m.hazard ? " hazard-reading" : ""}">${countyReading(p, state.layer, cutoffFor(state, state.layer))}</div><p>${[esc(metricName(state.layer, cutoffFor(state, state.layer))), monthName(state.layer), periodFor(state.layer, p)].filter(Boolean).join(" · ")}</p>`
-        : "") +
-      '<div class="actions"><button class="secondary" id="locate-detail">' +
-      icon("location", 16) +
-      "Locate on Map</button></div>" +
-      landscapeDetails(p, m?.landCover) +
-      '<h3>County Profile</h3><div class="detailgrid">' +
-      fields
-        .map(
-          (k) =>
-            "<div>" +
-            esc(metricName(k, cutoffFor(state, k))) +
-            "<b>" +
-            fmt(value(p, k, cutoffFor(state, k)), layers[k].unit) +
-            "</b>" +
-            (k === "populationDensity" || crimeCredits[k] || countySources[k]
-              ? layers[k].period
-              : monthName(k)) +
-            (k === "populationDensity"
-              ? "<br>" + fmt(p.residents, "residents")
-              : "") +
-            (k === "populationDensity" && p.populationNote
-              ? "<br>" + esc(p.populationNote)
-              : "") +
-            "</div>",
-        )
-        .join("") +
-      "</div>" +
-      monthlyChart(v) +
-      `<details class="month-table" ${m?.hazard ? "open" : ""}><summary>Natural Hazard Risks</summary><p class="micro">National risk percentiles · December 2025. Higher scores indicate greater risk relative to other counties assessed by FEMA. They describe countywide risk. An address can have different exposure.</p>
-      <div class="detailgrid">${Object.entries(hazardLayers)
-        .map(
-          ([key, layer]) =>
-            `<div>${layer.name}<b>${countyReading(p, key)}</b></div>`,
-        )
-        .join("")}</div>
-      <p class="micro">${hazardCredit}</p></details>` +
-      (active.length
-        ? "<h3>Filter Results</h3>" +
-          active
-            .map((f) => {
-              const ok = outcome(p, [f], "all");
-              return (
-                '<div class="minirow"><span>' +
-                esc(metricName(f.key, f.cutoff)) +
-                " " +
-                fmt(f.min, layers[f.key].unit) +
-                " – " +
-                fmt(f.max, layers[f.key].unit) +
-                "</span><b>" +
-                (ok === null ? "Unknown" : ok ? "Match" : "Outside") +
-                "</b></div>"
-              );
-            })
-            .join("")
-        : "") +
-      '<p class="micro">Crime measures use ' +
-      crimeCredits.violentCrimeRate +
-      " and " +
-      crimeCredits.homicideRate +
-      ".</p>",
-  );
-
-  $("locate-detail").onclick = () => {
-    dialog.close();
-    locate(p);
-  };
-}
-
-let probeVersion = 0;
-async function pointDetails(county, point) {
-  const generation = ++probeVersion;
-  const heading = point.name || "Nearby Places at This Point";
-  const place = [
-    Number.isFinite(point.population)
-      ? number(point.population) + " residents"
-      : "",
-    point.lat.toFixed(4) + ", " + point.lon.toFixed(4),
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  showDialog(
-    heading,
-    `<p id="point-caption">${esc(place)}</p><div id="local-measures" role="status">Measuring local access…</div>`,
-  );
-  const target = $("local-measures");
-  const result = await access.inspect(point.lon, point.lat);
-  if (!dialog.open || !target.isConnected || generation !== probeVersion)
-    return;
-  if (result.error) {
-    target.textContent = result.error;
-    return;
-  }
-  county = places[result.countyIndex] ?? county;
-  $("point-caption").textContent = [
-    county
-      ? county.name + ", " + county.state
-      : "Outside mapped county boundaries",
-    place,
-  ].join(" · ");
-  let combined = 2;
-  function vote(hit) {
-    combined = combine(combined, hit === null ? -1 : Number(hit), state.mode);
-  }
-  const countyRows = filters()
-    .filter((f) => f.on && !layers[f.key].facility)
-    .map((f) => {
-      const hit = county ? matchRange(county, f) : null;
-      vote(hit);
-      return `<div class="minirow"><span>${esc(metricName(f.key, f.cutoff))}</span><b>${countyReading(county, f.key, f.cutoff)}${hit === null ? " · Unknown" : hit ? " · Match" : " · Outside"}</b></div>`;
-    });
-  const rows = result.rows.map((row) => {
-    const f = filters().find((card) => filterId(card) === row.id);
-    const distance = row.miles;
-    const reading = !row.name ? "No eligible locations" : fmt(distance, "mi");
-    const hit = !row.name
-      ? false
-      : distance === null
-        ? null
-        : distance >= f.min && distance <= f.max;
-    if (f.on) vote(hit);
-    const verdict =
-      !f.on || hit === null ? "" : hit ? " · Match" : " · Outside";
-    return `<div class="local-reading"><div class="minirow"><strong>${esc(layers[f.key].name)}</strong><b>${reading}${verdict}</b></div>${row.name ? `<small>${layers[f.key].nature ? "Mapped feature" : "Nearest location"} · ${esc(row.name)}</small>` : ""}</div>`;
-  });
-  target.innerHTML =
-    (combined === 2
-      ? ""
-      : `<div class="point-verdict"><strong>${combined === 1 ? "Matches Your Filters" : combined === 0 ? "Outside Your Filters" : "Uncertain Match"}</strong><small>${state.mode === "all" ? "Match All" : "Match Any"}</small></div>`) +
-    rows.join("") +
-    countyRows.join("") +
-    (projection([point.lon, point.lat])
-      ? '<button class="secondary" id="zoom-point">Zoom Here</button>'
-      : "") +
-    (county
-      ? `<button class="secondary" data-place="${county.uid}">County Profile</button>`
-      : "");
-  const targetZoom = $("zoom-point");
-  if (targetZoom)
-    targetZoom.onclick = () => {
+  openCountyProfile({
+    county,
+    point,
+    state,
+    periodFor,
+    showDialog,
+    select,
+    dayLoad,
+    inspect: (point) => access.inspect(point.lon, point.lat),
+    countyAt: (index) => places[index],
+    locateCounty: (county) => {
+      dialog.close();
+      locate(county);
+    },
+    zoomToPoint: (point) => {
       dialog.close();
       const [x, y] = projection([point.lon, point.lat]);
       centerMap(x, y, Math.min(120, Math.max(10, zoom * 3)));
-    };
+    },
+  });
 }
 // Convert screen-sized map symbols to projection units after zoom or resize.
 let symbolScale, symbolZoom;
@@ -1484,7 +1321,7 @@ function bind() {
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-place]");
     if (!el) return;
-    placeDetails(el.dataset.place);
+    inspectPlace(byID.get(el.dataset.place));
   });
   document.addEventListener("keydown", (e) => {
     if (
@@ -1587,13 +1424,13 @@ function bind() {
       const point = referenceMap?.point(e) ?? access.point(e);
       if (p || point.name) {
         $("hover").hidden = true;
-        pointDetails(p, point);
+        inspectPlace(p, point);
         return;
       }
     }
     if (p) {
       $("hover").hidden = true;
-      placeDetails(p.uid);
+      inspectPlace(p);
     }
   });
   svg.addEventListener(
@@ -1641,9 +1478,13 @@ async function init() {
       "crime",
       "land-cover",
     ].map(async (name) => {
-      // The second climate schema includes the daily-low threshold counts.
       const path =
-        name === "climate" ? "./data/climate.json?v=2" : `./data/${name}.json`;
+        `./data/${name}.json` +
+        (name === "climate"
+          ? "?v=3"
+          : ["humidity", "cloudyDays", "rainfall"].includes(name)
+            ? "?v=2"
+            : "");
       const r = await fetch(path);
       if (!r.ok) throw new Error(name + " HTTP " + r.status);
       return r.json();
@@ -1708,6 +1549,8 @@ async function init() {
         ...humidity.counties[c.id],
         cloudyDays: cloudyDays.counties[c.id],
         rainfall: rainfall.counties[c.id],
+        monthlyRainfall: rainfall.monthlyCounties[c.id],
+        monthlyCloudyDays: cloudyDays.monthlyCounties[c.id],
         snowfall: snowfall.counties[c.id],
         populationDensity: residentsPerSquareMile(
           population.counties[c.id],
@@ -1764,6 +1607,11 @@ async function init() {
     styleMapScale();
     highlight();
     refresh();
+    await dayLoad.done;
+    if (dayLoad.status === "error")
+      throw new Error(
+        "Monthly day counts could not load. Please retry the export.",
+      );
     $("loading").hidden = true;
     const { createMapPdf } = await import(
       new URL(import.meta.mapPdf ?? "./map-pdf.js", import.meta.url).href

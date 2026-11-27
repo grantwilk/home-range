@@ -9,11 +9,11 @@ Run: uv run scripts/build_climate.py --cache /tmp/home-range-epinoaa
 
 import argparse
 import calendar
+import gzip
 import json
 import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
 from itertools import accumulate
 from pathlib import Path
 
@@ -102,6 +102,9 @@ def summarize_county(months):
 
     lows, highs, means = [monthly_f(i) for i in range(3)]
     result = monthly_counties.temperature_profile(lows, highs, means)
+    result["monthlyWetDays"] = [
+        round(sum(row[3] for row in years) / YEARS, 1) for years in records
+    ]
     totals = [
         sum(column) for column in zip(*(row[3:] for years in records for row in years))
     ]
@@ -148,21 +151,49 @@ def build(cache, output):
     for path, (year, month) in zip(files, dates, strict=True):
         for fips, *values in summarize_month(db, path, year, month):
             by_county.setdefault(fips, {}).setdefault(month, []).append(values)
-    cold = cold_histograms(db, files)
+    cold_by_month = [cold_histograms(db, files[index::12]) for index in range(12)]
     db.close()
-    expected_days = (date(END + 1, 1, 1) - date(START, 1, 1)).days
     counties = {}
+    day_tables = [{} for _ in range(12)]
+    expected_month_days = [
+        sum(calendar.monthrange(year, month)[1] for year in range(START, END + 1))
+        for month in range(1, 13)
+    ]
     for fips, months in sorted(by_county.items()):
         result = summarize_county(months)
-        if result is not None:
-            histogram = cold[fips]
-            if sum(histogram.values()) != expected_days:
-                raise ValueError(f"Cold-day coverage mismatch for {fips}")
-            counts = accumulate(histogram.get(t, 0) for t in COLD_THRESHOLDS)
-            result["coldDays"] = [round(n / YEARS, 1) for n in counts]
-            counties[fips] = result
+        if result is None:
+            continue
+        annual_cold = [0] * len(COLD_THRESHOLDS)
+        for index, histograms in enumerate(cold_by_month):
+            histogram = histograms[fips]
+            if sum(histogram.values()) != expected_month_days[index]:
+                raise ValueError(
+                    f"Cold-day coverage mismatch for {fips}, month {index + 1}"
+                )
+            cold = list(accumulate(histogram.get(t, 0) for t in COLD_THRESHOLDS))
+            annual_cold = [a + c for a, c in zip(annual_cold, cold, strict=True)]
+            heat = [
+                sum(col)
+                for col in zip(*(row[5:] for row in months[index + 1]), strict=True)
+            ]
+            day_tables[index][fips] = [
+                [round(n / YEARS, 1) for n in series] for series in (heat, cold)
+            ]
+        result["coldDays"] = [round(n / YEARS, 1) for n in annual_cold]
+        counties[fips] = result
     if not counties:
         raise ValueError("No county has a complete climate record.")
+    # National threshold arrays are fetched one calendar month at a time.
+    directory = output.parent / "monthly-days"
+    directory.mkdir(exist_ok=True)
+    for month, table in enumerate(day_tables, start=1):
+        path = directory / f"{month:02}.json.gz"
+        content = json.dumps(
+            {"month": month, "counties": table}, separators=(",", ":"), allow_nan=False
+        )
+        temp = path.with_suffix(".tmp")
+        temp.write_bytes(gzip.compress(content.encode(), compresslevel=9, mtime=0))
+        temp.replace(path)
     counties.update(monthly_counties.load_monthly())
     payload = {
         "period": [START, END],
@@ -173,7 +204,7 @@ def build(cache, output):
         "sourceUnits": {"tmin": "°C", "tmax": "°C", "tavg": "°C", "prcp": "mm"},
         "methods": {
             "temperatures": "Mean of 30 annual calendar-month means, converted to °F. Coldest and hottest months use monthly mean temperature; ties use the earliest month.",
-            "days": "Mean annual number of calendar days where county-area daily high ≥ named °F threshold, daily low < named °F threshold, or daily precipitation ≥ 0.254 mm (wet) or < 0.254 mm (dry). Leap days included.",
+            "days": "Mean number of days per selected calendar month or year where county-area daily high ≥ named °F threshold, daily low < named °F threshold, or daily precipitation ≥ 0.254 mm (wet) or < 0.254 mm (dry). Leap days included.",
             "coldThresholdsF": [COLD_THRESHOLDS.start, COLD_THRESHOLDS.stop - 1],
             "coverage": "Contiguous United States. Requires exactly one valid county record per calendar day in all 360 months. County boundaries follow the source FIPS vintage.",
             "precision": "Published figures are rounded to the nearest tenth.",

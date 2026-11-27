@@ -1,4 +1,4 @@
-import { filterId, metricName, viewedId } from "./model.js";
+import { filterId, layers, metricName, viewedId } from "./model.js";
 import { referenceSymbols } from "./map-reference.js";
 
 export function openExportOptions({ state, showDialog, onExport }) {
@@ -53,7 +53,7 @@ export function openExportOptions({ state, showDialog, onExport }) {
         label += ` · ${f.citySize.min.toLocaleString("en-US")}–${f.citySize.max.toLocaleString("en-US")} residents`;
       else if (f.key === "custom")
         label += ` · ${f.points[0]?.[0] ?? "Empty list"}${f.points.length > 1 ? ` (+${f.points.length - 1})` : ""}`;
-      else label += ` · ${f.min}–${f.max} days/year`;
+      else label += ` · ${f.min}–${f.max} ${layers[f.key].unit}`;
     }
     layer.add(new Option(label, filterId(f)));
   }

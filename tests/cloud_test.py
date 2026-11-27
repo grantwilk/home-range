@@ -58,6 +58,14 @@ class CloudyDays(unittest.TestCase):
         )
         self.assertEqual(data["daysEvaluated"], 10_958)
         self.assertEqual(data["thresholdPercent"], 80)
+        self.assertEqual(
+            data["monthlyCounties"]["15005"][:6], [6.9, 8.0, 9.8, 10.3, 8.9, 8.7]
+        )
+        self.assertEqual(data["monthlyCounties"]["15005"][-4:], [9.9, 11.1, 10.3, 8.4])
+        for fips, record in data["monthlyCounties"].items():
+            self.assertEqual(len(record), 12)
+            self.assertTrue(all(0 <= count <= 31 for count in record))
+            self.assertAlmostEqual(sum(record), data["counties"][fips], delta=0.66)
         self.assertEqual(data["period"], "1991–2020")
         # Independently counted directly from the NOAA annual files. The first four
         # lie in a single cell and can be checked without a polygon-weighting implementation.

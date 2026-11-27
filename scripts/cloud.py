@@ -197,7 +197,8 @@ def repair_2016(cache, dates, daily):
 
 def build(cache):
     counties = county_boundaries(cache).sort_values("GEOID").reset_index(drop=True)
-    counts = np.zeros(len(counties), dtype=int)
+    counts = np.zeros((12, len(counties)), dtype=int)
+    month_days = np.zeros(12, dtype=int)
     valid_days = counts.copy()
     for year in YEARS:
         path = verified_download(
@@ -216,15 +217,19 @@ def build(cache):
             ):
                 raise ValueError(f"Grid changed in {year}")
             v = ds["tcdc"]
-            for start in range(0, len(v), 24):
-                chunk = v[start : start + 24]
+            start = 0
+            for month in range(12):
+                days = calendar.monthrange(year, month + 1)[1]
+                month_days[month] += days
+                chunk = v[start : start + days]
                 for day in range(start, start + len(chunk)):
                     if day in replacements:
                         chunk[day - start] = replacements[day]
                 values = chunk.reshape(len(chunk), -1)[:, used]
                 cloudy, covered = count_days(weights, values)
-                counts += cloudy
-                valid_days += covered
+                counts[month] += cloudy
+                valid_days[month] += covered
+                start += days
         print(year, flush=True)
     n_days = sum(365 + calendar.isleap(y) for y in YEARS)
     coverage = np.asarray(weights.sum(axis=1)).ravel()
@@ -251,7 +256,18 @@ def build(cache):
         },
         "counties": {
             fips: round(int(n) / len(YEARS), 1) if nvalid == n_days else None
-            for fips, n, nvalid in zip(counties.GEOID, counts, valid_days)
+            for fips, n, nvalid in zip(
+                counties.GEOID, counts.sum(axis=0), valid_days.sum(axis=0)
+            )
+        },
+        "monthlyCounties": {
+            fips: [
+                round(int(n) / len(YEARS), 1) if nvalid == days else None
+                for n, nvalid, days in zip(month_counts, coverage_days, month_days)
+            ]
+            for fips, month_counts, coverage_days in zip(
+                counties.GEOID, counts.T, valid_days.T
+            )
         },
     }
 

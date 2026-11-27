@@ -66,6 +66,16 @@ class RainfallTests(unittest.TestCase):
         self.assertEqual(data["coverage"], 3142)
         self.assertEqual(data["period"], "1991–2020")
         self.assertTrue(all(v is not None and 0 <= v < 400 for v in counties.values()))
+        self.assertEqual(set(data["monthlyCounties"]), expected)
+        for fips, record in data["monthlyCounties"].items():
+            self.assertEqual(len(record), 12)
+            self.assertTrue(all(0 <= amount <= 35 for amount in record))
+            self.assertAlmostEqual(sum(record), counties[fips], delta=0.66)
+        # Direct monthly TP minus SF at 37.25 N, 76.75 W (Williamsburg).
+        self.assertEqual(
+            data["monthlyCounties"]["51830"],
+            [3.1, 2.8, 4.0, 3.3, 3.6, 3.8, 4.3, 4.4, 4.6, 3.9, 3.3, 3.4],
+        )
         # Each entire county fits inside one original quarter-degree cell.
         # Summing TP and SF directly from all 60 original files at those
         # centres independently checks the published zonal and temporal pipeline.

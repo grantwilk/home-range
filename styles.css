@@ -1,3 +1,4 @@
+@import "./county-profile.css";
 @import "./reference-map.css";
 @font-face {
   font-family: "DM Sans";
@@ -641,41 +642,6 @@ dialog::backdrop {
 .optionrow small {
   color: var(--soft);
 }
-.detailval {
-  font-family: Bricolage, sans-serif;
-  font-weight: 650;
-  letter-spacing: -2px;
-  font-size: 43px;
-  color: var(--ink);
-}
-.detailgrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  margin: 12px 0;
-}
-.detailgrid div {
-  background: #f7f9f4;
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--soft);
-}
-.detailgrid b {
-  display: block;
-  font-size: 16px;
-  color: var(--ink);
-}
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin-top: 12px;
-}
 .micro {
   font-size: 12px;
   color: var(--soft);
@@ -718,25 +684,6 @@ dialog::backdrop {
   margin: 6px 0;
   color: var(--soft);
   font-size: 12px;
-}
-.monthly {
-  width: 100%;
-  background: #f8faf5;
-  border-radius: 7px;
-}
-.monthly text {
-  font:
-    10px "DM Sans",
-    sans-serif;
-  fill: #52604f;
-}
-.month-table {
-  margin: 6px 0;
-  font-size: 13px;
-}
-.month-table summary {
-  cursor: pointer;
-  color: var(--green);
 }
 .swatch.uncertain {
   background: #deddd1 radial-gradient(#827d6e 1px, transparent 1px);
@@ -1487,22 +1434,6 @@ select.searchinput {
   max-height: 30vh;
   overflow: auto;
 }
-.local-reading {
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
-}
-.local-reading .minirow {
-  border: 0;
-  padding: 0;
-}
-.local-reading small {
-  display: block;
-  color: var(--soft);
-  margin-top: 3px;
-}
-#local-measures > .secondary {
-  margin-top: 10px;
-}
 .credit-button {
   font: inherit;
   color: inherit;
@@ -1512,21 +1443,6 @@ select.searchinput {
   padding: 0;
   cursor: pointer;
 }
-.point-verdict {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #eef3e9;
-}
-#zoom-point {
-  margin-right: 6px;
-}
-
 :root {
   --inapplicable: #b5cdd9;
 }
@@ -1537,23 +1453,6 @@ select.searchinput {
 .tile-icon.hazard {
   background: #f3e4d5;
   color: #874b31;
-}
-.hazard-reading {
-  font-size: clamp(1.35rem, 4vw, 2rem);
-  letter-spacing: -0.025em;
-}
-
-.landscape-detail summary small {
-  display: block;
-  margin: 3px 0 0 1.1em;
-  font-weight: 400;
-  color: var(--soft);
-}
-.landscape-detail h3 {
-  margin-bottom: 0;
-}
-.landscape-detail .micro {
-  margin-top: 4px;
 }
 .land-shares {
   list-style: none;

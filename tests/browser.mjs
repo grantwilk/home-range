@@ -5,6 +5,10 @@ import {
   checkCatalogLayout,
   pickMeasure,
 } from "./catalog-browser.mjs";
+import {
+  checkCountyProfile,
+  checkMonthlyClimate,
+} from "./county-profile-browser.mjs";
 import { checkHazards } from "./hazards-browser.mjs";
 import { checkLocalAccess } from "./access-browser.mjs";
 import { checkReferenceMotion } from "./reference-motion-browser.mjs";
@@ -303,8 +307,10 @@ async function checkLandscape(page, base) {
   await page.locator("#search").click();
   await page.locator("#query").fill("55025");
   await page.locator('#suggest [data-place="c55025"]').click();
-  const detail = page.locator(".landscape-detail[open]");
-  await detail.waitFor();
+  const detail = page
+    .locator("#county-profile details[data-group]")
+    .filter({ has: page.locator("summary", { hasText: "Land & Terrain" }) });
+  await detail.locator("summary").first().click();
   assert.match(await detail.innerText(), /Crops & Pasture/);
   assert.equal(await detail.locator("ul").count(), 1);
   const shares = await detail
@@ -1010,23 +1016,18 @@ try {
     }
   }
   await pauseActiveFilters(page);
-  // All 24 monthly temperature choices and both humidity measures are present. Exhausted
-  // families disappear from the picker until one of their cards is removed.
+  // All 24 monthly temperature choices are used. Calendar-month humidity
+  // choices remain after adding the two county-specific seasonal extremes.
   await page.locator("#add-filter").click();
   assert.equal(
-    await page
-      .locator("[data-pick=temperature]:visible, [data-pick=humidity]:visible")
-      .count(),
+    await page.locator("[data-pick=temperature]:visible").count(),
     0,
   );
+  assert.equal(await page.locator("[data-pick=humidity]:visible").count(), 1);
   await page.locator("#close").click();
   assert.equal(await page.locator(".filter-row").count(), keys.length);
   assert.equal(
-    await page
-      .locator(
-        ".filter-row select:not([data-subtype], [data-temperature-month], [data-temperature-stat]), [data-comparison], [data-add], [data-remove]",
-      )
-      .count(),
+    await page.locator("[data-comparison], [data-add], [data-remove]").count(),
     0,
   );
   assert.equal(
@@ -1269,6 +1270,8 @@ try {
   await checkCatalogLayout(page, base);
   await checkHazards(page, base);
   await checkLandscape(page, base);
+  await checkCountyProfile(page, base);
+  await checkMonthlyClimate(page, base);
   await checkAnnualPrecipitation(page, base);
   await checkCrime(page, base);
   await checkColdDays(page, base);

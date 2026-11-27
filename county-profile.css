@@ -1,0 +1,265 @@
+dialog:has(#county-profile) {
+  max-width: min(610px, calc(100vw - 20px));
+  max-height: min(88dvh, 860px);
+  scrollbar-gutter: stable;
+}
+dialog:has(#county-profile) .dialogtop {
+  padding: 14px 22px;
+}
+dialog:has(#county-profile) .dialogtop h2 {
+  font-size: clamp(21px, 4vw, 27px);
+  line-height: 1.15;
+}
+#dialog-body:has(#county-profile) {
+  padding: 14px 22px 20px;
+}
+#county-profile {
+  font-size: 14px;
+}
+.profile-location,
+.match-heading,
+.match-summary,
+.profile-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.profile-location {
+  font-size: 12px;
+  color: var(--soft);
+  margin-bottom: 14px;
+}
+.profile-locate {
+  flex: none;
+}
+#county-profile .profile-locate {
+  font-size: 12px;
+  padding: 6px 9px;
+}
+.profile-current {
+  justify-content: flex-start;
+  align-items: flex-start;
+  border: 1px solid #d9e4d5;
+  border-radius: 9px;
+  padding: 12px 14px;
+  background: #f2f6ef;
+}
+.profile-current strong {
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.profile-current .detailval {
+  font:
+    650 clamp(20px, 4vw, 28px)/1.15 Bricolage,
+    sans-serif;
+  letter-spacing: -0.035em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  margin: 2px 0;
+}
+#county-profile .profile-current p,
+#county-profile .profile-note {
+  font-size: 12px;
+  color: var(--soft);
+  margin: 4px 0;
+}
+.profile-icon {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  flex: none;
+  color: #446750;
+  border-radius: 7px;
+  background: #eef3ea;
+}
+.profile-current .profile-icon {
+  background: #e1ecdb;
+}
+#county-matches {
+  margin: 18px 0;
+}
+#county-profile .match-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.match-heading > span {
+  color: var(--soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.match-summary {
+  margin: 7px 0;
+  padding: 8px 11px;
+  border-radius: 6px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  background: #f1f2ed;
+  color: #505b4e;
+}
+.match-summary[data-verdict="1"] {
+  background: #e8f2e5;
+  color: #2e613b;
+}
+.match-summary[data-verdict="0"] {
+  background: #f7ece5;
+  color: #794830;
+}
+.match-summary[data-verdict="-1"] {
+  background: #f6f1df;
+  color: #6b591f;
+}
+.match-summary > span {
+  font-size: 12px;
+}
+.match-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.match-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(5rem, 1fr);
+  gap: 12px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.match-row strong,
+.match-reading {
+  display: block;
+  font-size: 13px;
+}
+.match-row small,
+.match-status {
+  display: block;
+  color: var(--soft);
+  font-size: 12px;
+}
+.match-row > div:last-child {
+  text-align: right;
+}
+.match-row[data-result="outside"] .match-status {
+  color: #81462f;
+}
+.match-row[data-result="match"] .match-status {
+  color: #30643c;
+}
+.profile-group {
+  border-top: 1px solid var(--line);
+}
+.profile-group:last-child {
+  border-bottom: 1px solid var(--line);
+}
+.profile-group > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 2px;
+}
+.profile-group > summary::-webkit-details-marker {
+  display: none;
+}
+.profile-group > summary:focus-visible {
+  outline: 2px solid #4388a2;
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.profile-group > summary strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+.profile-group > summary small {
+  display: block;
+  color: var(--soft);
+  font-size: 12px;
+  line-height: 1.3;
+}
+.profile-group > summary > svg {
+  flex: none;
+  margin-left: auto;
+  color: var(--soft);
+}
+.profile-group[open] > summary > svg {
+  transform: rotate(180deg);
+}
+.group-content {
+  padding: 0 2px 15px;
+  min-width: 0;
+}
+.group-content h4 {
+  margin: 12px 0 5px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.group-content > h4:first-child {
+  margin-top: 0;
+}
+.profile-facts {
+  margin: 0;
+}
+.profile-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 7px 1px;
+  font-size: 13px;
+  border-bottom: 1px solid #e9ede6;
+}
+.profile-fact dt small {
+  display: block;
+  font-size: 11px;
+  color: var(--soft);
+}
+.profile-fact dd {
+  text-align: right;
+  margin: 0;
+  font-weight: 600;
+}
+.profile-months {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.profile-months :is(th, td) {
+  padding: 3px 6px;
+  text-align: right;
+}
+.profile-months tr > :first-child {
+  text-align: left;
+}
+.profile-months thead {
+  background: #eef3e9;
+}
+.profile-months tbody tr:nth-child(even) {
+  background: #f7f9f4;
+}
+.profile-chart {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  margin: 4px 0 10px;
+}
+.profile-chart text {
+  font:
+    9px "DM Sans",
+    sans-serif;
+  fill: var(--soft);
+}
+@media (max-width: 440px) {
+  #dialog-body:has(#county-profile) {
+    padding: 12px 14px 16px;
+  }
+  dialog:has(#county-profile) .dialogtop {
+    padding: 12px 14px;
+  }
+  #county-profile .land-shares li {
+    grid-template-columns: minmax(5rem, 1.2fr) minmax(1.5rem, 1fr) 3.2rem;
+  }
+}

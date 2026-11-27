@@ -2,10 +2,10 @@
 # requires-python = ">=3.11"
 # dependencies = ["exactextract==0.3.0", "rasterio==1.5.2", "geopandas==1.2.0"]
 # ///
-"""Build monthly relative humidity for each county's coldest and hottest month.
+"""Build the 12 calendar-month relative humidity normals for each county.
 
 Run with uv run scripts/humidity.py --cache /tmp/home-range-humidity.
-The seven global rasters used by the current temperature catalog need 3.2 GB.
+The 12 native global rasters occupy about 5.4 GB.
 """
 
 import argparse
@@ -29,10 +29,15 @@ TEMPLATE = SOURCE + "CHELSA_hurs_{month:02d}_1981-2010_V.2.1.tif"
 SHA256 = {
     1: "8fba5d20c34aa793364106eafe5dfbdd5c1acc35223a148f0df20c9095cdb9be",
     2: "1df5b5bfb8883f11f5a80a988df4cff5d1020f7a81cd8264f8f41e3b331bd17a",
+    3: "2b5f5ea810787088d56c0d7e9fa3cd236d6817a5e91ea343b2e8569ee133e984",
+    4: "4d7756c04b6ad90f16b70fec47e512d80060ac5c79d69cfbe8c33a6427027eff",
+    5: "c9ea5fd18f21ffd3d2673190403c3be685243403272dfd4b66ae2467a46b59ae",
     6: "a6a4b55b13c2293a4411751e77e4c482516161d142365bdd6640db837243c837",
     7: "e1bdace41155353fa600e6f1a51a1bda5bdb9f86585392a5e8d2368a95c3e379",
     8: "f0c4d80eade2d324e285240fab0e13932091b98df875d39887cb876a41ac0bca",
     9: "d7b905714d7291f87664adf8c41d71374d4337c9b3b78dca20d3777c812e4a10",
+    10: "7be8267ff03c91eb90abf669e600c4a4552c3f51c1024a232134e9dc3777b64c",
+    11: "0460775b65cfa66688edc6334f582ab6878e9500ac041a61e0e29a78ff1fec5e",
     12: "4420a47ca900873b01c17c0ca587fc59fa937e80c772a631ce4a379a178904c9",
 }
 FIELDS = {"coldHumidity": "coldMonth", "hotHumidity": "hotMonth"}
@@ -85,26 +90,27 @@ def build(climate, polygons, cache):
         .explode(index_parts=False)
         .reset_index(drop=True)
     )
-    counties = {fips: dict.fromkeys(FIELDS) for fips in sorted(polygons.GEOID.unique())}
-    selected = {}
-    for fips in counties:
+    counties = {
+        fips: {"monthlyHumidity": []} for fips in sorted(polygons.GEOID.unique())
+    }
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        files = pool.map(lambda m: read_month(m, cache), range(1, 13))
+        for path in files:
+            with rasterio.open(path) as raster:
+                validate_metadata(raster)
+                values = aggregate_month(raster, polygons)
+            for fips, record in counties.items():
+                record["monthlyHumidity"].append(values[fips])
+
+    # Keep the two temperature-selected months used by existing shared links.
+    for fips, record in counties.items():
         for field, month_key in FIELDS.items():
             month = climate.get(fips, {}).get(month_key)
-            if month is not None:
-                if month not in range(1, 13):
-                    raise ValueError(f"Invalid {month_key} for {fips}: {month}")
-                selected.setdefault(month, {}).setdefault(fips, []).append(field)
-    months = sorted(selected)
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        files = list(pool.map(lambda m: read_month(m, cache), months))
-    for month, path in zip(months, files, strict=True):
-        wanted = selected[month]
-        with rasterio.open(path) as raster:
-            validate_metadata(raster)
-            values = aggregate_month(raster, polygons[polygons.GEOID.isin(wanted)])
-        for fips, fields in wanted.items():
-            for field in fields:
-                counties[fips][field] = values[fips]
+            if month is not None and month not in range(1, 13):
+                raise ValueError(f"Invalid {month_key} for {fips}: {month}")
+            record[field] = (
+                None if month is None else record["monthlyHumidity"][month - 1]
+            )
     return counties
 
 
@@ -121,7 +127,7 @@ def main():
         )
     counties = build(climate["counties"], polygons, args.cache)
     payload = {
-        "title": "Relative Humidity in the Coldest and Hottest Months",
+        "title": "Average Monthly Relative Humidity",
         "period": "1981–2010",
         "monthSelectionPeriod": "1991–2020",
         "unit": "%",
@@ -132,10 +138,14 @@ def main():
         "paper": "https://doi.org/10.5194/essd-14-5573-2022",
         "rasterTemplate": TEMPLATE,
         "boundaries": BOUNDARIES,
-        "method": "Each figure is the 1981–2010 mean near-surface relative humidity for the calendar month identified as coldest or hottest by the county's 1991–2020 NOAA mean temperature. Native 30-arcsecond CHELSA modeled land pixels are weighted by their spherical area inside 2017 Census 1:500,000 polygons. Values require at least 95% valid mapped area and a known extreme month. Units are percent, rounded to one decimal.",
+        "method": "Monthly values are 1981–2010 mean near-surface relative humidity, in January through December order. Native 30-arcsecond CHELSA modeled land pixels are weighted by their spherical area inside 2017 Census 1:500,000 polygons. Each monthly value requires at least 95% valid mapped area. Seasonal fields select the coldest and hottest months from the county’s 1991–2020 NOAA mean temperatures, when available. Values are percent, rounded to one decimal.",
         "coverage": {
             f: sum(c[f] is not None for c in counties.values()) for f in FIELDS
         },
+        "monthlyCoverage": [
+            sum(c["monthlyHumidity"][i] is not None for c in counties.values())
+            for i in range(12)
+        ],
         "counties": counties,
     }
     output = DATA / "humidity.json"
@@ -145,7 +155,8 @@ def main():
         + "\n"
     )
     temp.replace(output)
-    print(payload["coverage"])
+    print("Monthly coverage:", payload["monthlyCoverage"])
+    print("Seasonal coverage:", payload["coverage"])
 
 
 if __name__ == "__main__":

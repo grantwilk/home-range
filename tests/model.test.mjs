@@ -150,7 +150,7 @@ test("new layers and default cards start at the full supported domain", () => {
       on: false,
       min: m.domain[0],
       max: m.domain[1],
-      cutoff: key === "coldDays" ? -30 : 90,
+      cutoff: m.threshold?.initial ?? 90,
     });
     assert.equal(freshFilter(key, true).on, true);
   }
@@ -312,4 +312,33 @@ test("mapped coverage, heat cutoffs and independent overlap counts match publish
   assert.equal(cloudyDays["04013"], 16.7);
   assert.equal(cloudyDays["15003"], 96.8);
   assert.equal(cloudyDays["11001"], 54.3);
+});
+
+test("calendar climate ranges keep month, units, missing readings, and temperature cutoffs distinct", () => {
+  const values = {
+    monthlyHumidity: Array(12).fill(44),
+    monthlyColdDays: [],
+    monthlyWetDays: Array(12).fill(5.7),
+  };
+  values.monthlyHumidity[10] = 40;
+  values.monthlyColdDays[10] = Array(121).fill(0);
+  values.monthlyColdDays[10][70] = 1.7;
+  const place = { values };
+  assert.equal(value(place, "novHumidity"), 40);
+  assert.equal(value(place, "decHumidity"), 44);
+  assert.equal(value(place, "janCloudyDays"), null);
+  assert.equal(value(place, "janColdDays", 10), null);
+  assert.equal(value(place, "novColdDays", 10), 1.7);
+  const rule = { ...f("novColdDays", 0, 1.7), cutoff: 10 };
+  assert.equal(
+    outcome(
+      place,
+      [rule, f("novHumidity", 0, 40), f("novWetDays", 5.7, 5.7)],
+      "all",
+    ),
+    true,
+  );
+  assert.equal(outcome(place, [{ ...rule, max: 1.6 }], "all"), false);
+  assert.equal(metricName("novColdDays", 10), "November Days Below 10°F");
+  assert.equal(layers.febWetDays.domain[1], 29);
 });

@@ -37,6 +37,9 @@ test("a subtype search selects available measures, including configurable copies
     ["freezing", "temperatureDays", "coldDays"],
     ["hot days", "temperatureDays", "heatDays"],
     ["november high", "temperature", "novHigh"],
+    ["november humidity", "humidity", "novHumidity"],
+    ["november rainfall", "annualPrecipitation", "novRainfall"],
+    ["november freezing", "temperatureDays", "novColdDays"],
     ["cardiac surgery", "distance", "hospitals"],
     ["middle school", "distance", "schools"],
     ["volcano", "hazard", "VLCN_RISKS"],
@@ -54,7 +57,9 @@ test("a subtype search selects available measures, including configurable copies
     const again = catalogMatches(new Set([key]), term).flatMap(
       (g) => g.entries,
     );
-    if (["heatDays", "coldDays"].includes(key)) assert.equal(again[0].key, key);
+    if (["heatDays", "coldDays", "novColdDays"].includes(key))
+      assert.equal(again[0].key, key);
+    else if (key === "cloudyDays") assert.equal(again[0].key, "janCloudyDays");
     else assert.deepEqual(again, []);
   }
 });

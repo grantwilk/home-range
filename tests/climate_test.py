@@ -1,5 +1,6 @@
 """Offline ingestion regressions. Run with uv run --with duckdb==2.0.1 tests/climate_test.py."""
 
+import gzip
 import json
 import sys
 import tempfile
@@ -116,6 +117,33 @@ class ClimateDataTests(unittest.TestCase):
         self.assertEqual(geo - data.keys(), {"02261", "51678"})
         self.assertNotIn("wetDays", data["15003"])
         self.assertNotIn("heatDays", data["02020"])
+
+    def test_monthly_threshold_files_and_daily_source_counts(self):
+        data = json.loads((ROOT / "data/climate.json").read_text())["counties"]
+        expected = {fips for fips, record in data.items() if "wetDays" in record}
+        for month in range(1, 13):
+            path = ROOT / "data/monthly-days" / f"{month:02}.json.gz"
+            with gzip.open(path, "rt") as source:
+                table = json.load(source)
+            self.assertEqual(table["month"], month)
+            self.assertEqual(set(table["counties"]), expected)
+            for hot, cold in table["counties"].values():
+                self.assertEqual(len(hot), 51)
+                self.assertEqual(len(cold), 121)
+                self.assertEqual(hot, sorted(hot, reverse=True))
+                self.assertEqual(cold, sorted(cold))
+                self.assertTrue(
+                    0 <= min(hot[-1], cold[0]) <= max(hot[0], cold[-1]) <= 31
+                )
+            # Direct comparisons against all daily rows from Dane County's
+            # 30 January, July, and November records (90 F highs, 0 F lows).
+            if month in [1, 7, 11]:
+                hot, cold = table["counties"]["55025"]
+                actual = (hot[30], cold[60], data["55025"]["monthlyWetDays"][month - 1])
+                self.assertEqual(
+                    actual,
+                    {1: (0, 7.5, 9.1), 7: (2.8, 0, 11.9), 11: (0, 0, 8.9)}[month],
+                )
 
     def test_independent_spot_checks(self):
         # Independent scans of all dated source rows (July and January
